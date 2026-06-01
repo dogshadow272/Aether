@@ -1,6 +1,6 @@
 "use client";
 
-export default function QuoteNode({ quote, onDragStart, onDelete }) {
+export default function QuoteNode({ quote, onDragStart, onDelete, isSelected }) {
   const handlePointerDown = (e) => {
     e.stopPropagation();
     onDragStart(quote.id, "quote", e.clientX, e.clientY, e.currentTarget, e.pointerId);
@@ -13,7 +13,9 @@ export default function QuoteNode({ quote, onDragStart, onDelete }) {
 
   return (
     <div
-      className="absolute max-w-xs aero-panel p-3 text-white text-sm italic font-sans cursor-grab active:cursor-grabbing border-l-2 border-l-[#00aaff]"
+      className={`absolute max-w-xs aero-panel p-3 text-white text-sm italic font-sans cursor-grab active:cursor-grabbing border-l-2 border-l-[#00aaff] ${
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+      }`}
       style={{ 
         left: quote.x_pos, 
         top: quote.y_pos,

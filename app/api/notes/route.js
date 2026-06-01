@@ -2,9 +2,26 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { syncNoteToDisk, deleteNoteFromDisk } from '@/lib/sync';
 
+// Pre-compiled prepared statements for maximum performance
+const selectNotesStmt = db.prepare('SELECT * FROM notes');
+const selectNoteByIdStmt = db.prepare('SELECT * FROM notes WHERE id = ?');
+
+const insertNoteStmt = db.prepare(`
+  INSERT INTO notes (id, content, x_pos, y_pos, width, height, color, wrap_text)
+  VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @color, @wrap_text)
+`);
+
+const updateNoteStmt = db.prepare(`
+  UPDATE notes
+  SET content = @content, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, color = @color, wrap_text = @wrap_text
+  WHERE id = @id
+`);
+
+const deleteNoteStmt = db.prepare('DELETE FROM notes WHERE id = ?');
+
 export async function GET() {
   try {
-    const notes = db.prepare('SELECT * FROM notes').all();
+    const notes = selectNotesStmt.all();
     return NextResponse.json(notes);
   } catch (error) {
     console.error('Failed to fetch notes:', error);
@@ -17,12 +34,7 @@ export async function POST(request) {
     const data = await request.json();
     const id = crypto.randomUUID();
     
-    const stmt = db.prepare(`
-      INSERT INTO notes (id, content, x_pos, y_pos, width, height, color, wrap_text)
-      VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @color, @wrap_text)
-    `);
-    
-    stmt.run({
+    insertNoteStmt.run({
       id,
       content: data.content || 'DOUBLE-CLICK TO EDIT NOTE',
       x_pos: data.x_pos || 0,
@@ -33,7 +45,7 @@ export async function POST(request) {
       wrap_text: data.wrap_text !== undefined ? (data.wrap_text ? 1 : 0) : 1
     });
 
-    const newNote = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+    const newNote = selectNoteByIdStmt.get(id);
     syncNoteToDisk(newNote);
     return NextResponse.json(newNote);
   } catch (error) {
@@ -47,13 +59,7 @@ export async function PUT(request) {
     const data = await request.json();
     const { id, content, x_pos, y_pos, width, height, color, wrap_text } = data;
     
-    const stmt = db.prepare(`
-      UPDATE notes
-      SET content = @content, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, color = @color, wrap_text = @wrap_text
-      WHERE id = @id
-    `);
-    
-    stmt.run({
+    updateNoteStmt.run({
       id,
       content,
       x_pos,
@@ -64,7 +70,7 @@ export async function PUT(request) {
       wrap_text: wrap_text !== undefined ? (wrap_text ? 1 : 0) : 1
     });
     
-    const updatedNote = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+    const updatedNote = selectNoteByIdStmt.get(id);
     syncNoteToDisk(updatedNote);
     return NextResponse.json(updatedNote);
   } catch (error) {
@@ -80,7 +86,7 @@ export async function DELETE(request) {
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
     deleteNoteFromDisk(id);
-    db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+    deleteNoteStmt.run(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Failed to delete note:', error);

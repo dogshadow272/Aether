@@ -20,7 +20,7 @@ const getColorHex = (rgba) => {
   return "#00aaff";
 };
 
-export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArrangeNodes, booksCount = 0, completedCount = 0, isFocused, onToggleFocus, isHighlighted }) {
+export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArrangeNodes, booksCount = 0, completedCount = 0, isFocused, onToggleFocus, isHighlighted, isSelected }) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(area.name);
   const inputRef = useRef(null);
@@ -64,6 +64,8 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
     <div
       className={`absolute border rounded-lg flex flex-col pointer-events-auto ${getColorClass(area.color)} ${
         isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+      } ${
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
       style={{
         left: area.x_pos,

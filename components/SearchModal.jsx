@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export default function SearchModal({
   isOpen: controlledIsOpen,
+  onOpen: controlledOnOpen,
   onClose: controlledOnClose,
   onAddBook,
   onAddNote,
@@ -19,7 +20,11 @@ export default function SearchModal({
   const [localIsOpen, setLocalIsOpen] = useState(false);
   const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : localIsOpen;
   const setIsOpen = (val) => {
-    if (controlledOnClose && !val) controlledOnClose();
+    if (val) {
+      if (controlledOnOpen) controlledOnOpen();
+    } else {
+      if (controlledOnClose) controlledOnClose();
+    }
     setLocalIsOpen(val);
   };
   const [query, setQuery] = useState("");

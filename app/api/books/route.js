@@ -2,10 +2,30 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { syncBookToDisk, deleteBookFromDisk } from '@/lib/sync';
 
+// Pre-compiled prepared statements for maximum performance
+const selectBooksStmt = db.prepare('SELECT * FROM books');
+const selectQuotesStmt = db.prepare('SELECT * FROM quotes');
+const selectBookByIdStmt = db.prepare('SELECT * FROM books WHERE id = ?');
+const selectQuotesByBookIdStmt = db.prepare('SELECT * FROM quotes WHERE book_id = ?');
+
+const insertBookStmt = db.prepare(`
+  INSERT INTO books (id, title, author, cover_url, x_pos, y_pos, status)
+  VALUES (@id, @title, @author, @cover_url, @x_pos, @y_pos, @status)
+`);
+
+const updateBookStmt = db.prepare(`
+  UPDATE books
+  SET title = @title, author = @author, cover_url = @cover_url,
+      rating = @rating, review = @review, x_pos = @x_pos, y_pos = @y_pos, status = @status
+  WHERE id = @id
+`);
+
+const deleteBookStmt = db.prepare('DELETE FROM books WHERE id = ?');
+
 export async function GET() {
   try {
-    const books = db.prepare('SELECT * FROM books').all();
-    const quotes = db.prepare('SELECT * FROM quotes').all();
+    const books = selectBooksStmt.all();
+    const quotes = selectQuotesStmt.all();
     
     // Group quotes by book_id
     const booksWithQuotes = books.map(book => ({
@@ -25,12 +45,7 @@ export async function POST(request) {
     const data = await request.json();
     const id = crypto.randomUUID();
     
-    const stmt = db.prepare(`
-      INSERT INTO books (id, title, author, cover_url, x_pos, y_pos, status)
-      VALUES (@id, @title, @author, @cover_url, @x_pos, @y_pos, @status)
-    `);
-    
-    stmt.run({
+    insertBookStmt.run({
       id,
       title: data.title,
       author: data.author || '',
@@ -40,7 +55,7 @@ export async function POST(request) {
       status: data.status || 'To Read'
     });
 
-    const newBook = db.prepare('SELECT * FROM books WHERE id = ?').get(id);
+    const newBook = selectBookByIdStmt.get(id);
     syncBookToDisk(newBook);
     return NextResponse.json({ ...newBook, quotes: [] });
   } catch (error) {
@@ -54,22 +69,15 @@ export async function PUT(request) {
     const data = await request.json();
     const { id, title, author, cover_url, rating, review, x_pos, y_pos, status } = data;
     
-    const oldBook = db.prepare('SELECT * FROM books WHERE id = ?').get(id);
+    const oldBook = selectBookByIdStmt.get(id);
     if (oldBook && oldBook.title !== title) {
       deleteBookFromDisk(oldBook);
     }
 
-    const stmt = db.prepare(`
-      UPDATE books
-      SET title = @title, author = @author, cover_url = @cover_url,
-          rating = @rating, review = @review, x_pos = @x_pos, y_pos = @y_pos, status = @status
-      WHERE id = @id
-    `);
+    updateBookStmt.run({ id, title, author, cover_url, rating, review, x_pos, y_pos, status });
     
-    stmt.run({ id, title, author, cover_url, rating, review, x_pos, y_pos, status });
-    
-    const updatedBook = db.prepare('SELECT * FROM books WHERE id = ?').get(id);
-    const quotes = db.prepare('SELECT * FROM quotes WHERE book_id = ?').all(id);
+    const updatedBook = selectBookByIdStmt.get(id);
+    const quotes = selectQuotesByBookIdStmt.all(id);
     
     syncBookToDisk(updatedBook);
     return NextResponse.json({ ...updatedBook, quotes });
@@ -85,16 +93,15 @@ export async function DELETE(request) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(id);
+    const book = selectBookByIdStmt.get(id);
     if (book) {
       deleteBookFromDisk(book);
     }
 
-    db.prepare('DELETE FROM books WHERE id = ?').run(id);
+    deleteBookStmt.run(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Failed to delete book:', error);
     return NextResponse.json({ error: 'Failed to delete book' }, { status: 500 });
   }
 }
-

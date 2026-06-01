@@ -2,7 +2,7 @@
 import { useRef } from "react";
 import { Link, Eye } from "lucide-react";
 
-export default function BookNode({ book, onDragStart, onStartConnection, isFocused, onToggleFocus, isHighlighted }) {
+export default function BookNode({ book, onDragStart, onStartConnection, isFocused, onToggleFocus, isHighlighted, isSelected }) {
   const handlePointerDown = (e) => {
     // If clicking a handle, don't drag
     if (e.target.closest(".connector-handle")) return;
@@ -16,6 +16,8 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
       data-node-type="book"
       className={`absolute aero-panel w-48 cursor-grab active:cursor-grabbing group transition-shadow duration-300 ${
         isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+      } ${
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
       style={{
         left: book.x_pos,

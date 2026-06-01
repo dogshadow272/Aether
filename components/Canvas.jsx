@@ -6,6 +6,7 @@ import SearchModal from "./SearchModal";
 import ReviewModal from "./ReviewModal";
 import AreaNode from "./AreaNode";
 import NoteNode from "./NoteNode";
+import TelemetryDashboard from "./TelemetryDashboard";
 
 // Parallax Interactive Starfield Background
 function StarfieldBackground({ pan, scale }) {
@@ -265,11 +266,16 @@ export default function Canvas() {
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [tempBox, setTempBox] = useState(null);
   const [activeDialog, setActiveDialog] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [pendingPlacement, setPendingPlacement] = useState(null);
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
-  // Custom connection drawing states
   const [connectionSource, setConnectionSource] = useState(null);
   const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
   const [focusNode, setFocusNode] = useState(null); // { id: string, type: 'book' | 'note' | 'quote' }
+  const [selectedNodes, setSelectedNodes] = useState([]); // Array of { id, type }
+  const [tempLassoBox, setTempLassoBox] = useState(null); // { x, y, w, h }
+  const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
 
   const handleToggleFocus = (id, type, shouldZoom = false) => {
     setFocusNode((prev) => {
@@ -282,6 +288,267 @@ export default function Canvas() {
       }
       return { id, type };
     });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedNodes.length === 0) return;
+    if (!confirm(`Are you sure you want to delete all ${selectedNodes.length} selected items?`)) return;
+
+    const booksToDelete = selectedNodes.filter(n => n.type === "book");
+    const notesToDelete = selectedNodes.filter(n => n.type === "note");
+    const areasToDelete = selectedNodes.filter(n => n.type === "area");
+    const quotesToDelete = selectedNodes.filter(n => n.type === "quote");
+
+    setSelectedNodes([]);
+
+    const promises = [
+      ...booksToDelete.map(b => fetch(`/api/books?id=${b.id}`, { method: "DELETE" })),
+      ...notesToDelete.map(n => fetch(`/api/notes?id=${n.id}`, { method: "DELETE" })),
+      ...areasToDelete.map(a => fetch(`/api/areas?id=${a.id}`, { method: "DELETE" })),
+      ...quotesToDelete.map(q => fetch(`/api/quotes?id=${q.id}`, { method: "DELETE" })),
+    ];
+
+    try {
+      await Promise.all(promises);
+      fetchBooks();
+      fetchAreas();
+      fetchNotes();
+      
+      const deletedIds = new Set(selectedNodes.map(n => n.id));
+      const linksToDelete = links.filter(l => deletedIds.has(l.source_id) || deletedIds.has(l.target_id));
+      await Promise.all(linksToDelete.map(l => fetch(`/api/links?id=${l.id}`, { method: "DELETE" })));
+      fetchLinks();
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+    }
+  };
+
+  const handleBulkColor = async (colorVal) => {
+    const notesToColor = selectedNodes.filter(n => n.type === "note");
+    const areasToColor = selectedNodes.filter(n => n.type === "area");
+
+    setNotes(prev => prev.map(n => notesToColor.some(sel => sel.id === n.id) ? { ...n, color: colorVal } : n));
+    setAreas(prev => prev.map(a => areasToColor.some(sel => sel.id === a.id) ? { ...a, color: colorVal } : a));
+
+    const promises = [
+      ...notesToColor.map(sel => {
+        const note = notesRef.current.find(n => n.id === sel.id);
+        return fetch("/api/notes", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...note, color: colorVal })
+        });
+      }),
+      ...areasToColor.map(sel => {
+        const area = areasRef.current.find(a => a.id === sel.id);
+        return fetch("/api/areas", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...area, color: colorVal })
+        });
+      })
+    ];
+
+    try {
+      await Promise.all(promises);
+    } catch (err) {
+      console.error("Bulk color update failed:", err);
+    }
+  };
+
+  const handleBulkArrangeGrid = async () => {
+    const booksToArrange = selectedNodes.filter(n => n.type === "book");
+    const notesToArrange = selectedNodes.filter(n => n.type === "note");
+    const totalToArrange = [...booksToArrange, ...notesToArrange];
+
+    if (totalToArrange.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+
+    totalToArrange.forEach(sel => {
+      const item = sel.type === "book"
+        ? booksRef.current.find(b => b.id === sel.id)
+        : notesRef.current.find(n => n.id === sel.id);
+      if (item) {
+        if (item.x_pos < minX) minX = item.x_pos;
+        if (item.y_pos < minY) minY = item.y_pos;
+      }
+    });
+
+    if (minX === Infinity || minY === Infinity) {
+      minX = 100;
+      minY = 100;
+    }
+
+    const cols = Math.ceil(Math.sqrt(totalToArrange.length));
+    const hSpacing = 260;
+    const vSpacing = 380;
+    const promises = [];
+
+    totalToArrange.forEach((sel, index) => {
+      const r = Math.floor(index / cols);
+      const c = index % cols;
+      const targetX = Math.round((minX + c * hSpacing) / 20) * 20;
+      const targetY = Math.round((minY + r * vSpacing) / 20) * 20;
+
+      if (sel.type === "book") {
+        const book = booksRef.current.find(b => b.id === sel.id);
+        if (book) {
+          const updatedBook = { ...book, x_pos: targetX, y_pos: targetY };
+          setBooks(prev => prev.map(b => b.id === book.id ? updatedBook : b));
+          promises.push(
+            fetch("/api/books", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updatedBook)
+            })
+          );
+        }
+      } else {
+        const note = notesRef.current.find(n => n.id === sel.id);
+        if (note) {
+          const updatedNote = { ...note, x_pos: targetX, y_pos: targetY };
+          setNotes(prev => prev.map(n => n.id === note.id ? updatedNote : n));
+          promises.push(
+            fetch("/api/notes", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updatedNote)
+            })
+          );
+        }
+      }
+    });
+
+    try {
+      await Promise.all(promises);
+    } catch (err) {
+      console.error("Bulk grid arrange failed:", err);
+    }
+  };
+
+  const handleBulkCreateZone = async () => {
+    const booksInSelection = selectedNodes.filter(n => n.type === "book");
+    const notesInSelection = selectedNodes.filter(n => n.type === "note");
+    const totalSelected = [...booksInSelection, ...notesInSelection];
+
+    if (totalSelected.length === 0) return;
+
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+
+    totalSelected.forEach(sel => {
+      const item = sel.type === "book"
+        ? booksRef.current.find(b => b.id === sel.id)
+        : notesRef.current.find(n => n.id === sel.id);
+      if (item) {
+        const w = sel.type === "book" ? 192 : (item.width || 220);
+        const h = sel.type === "book" ? (item.cover_url ? 320 : 160) : (item.height || 150);
+
+        if (item.x_pos < minX) minX = item.x_pos;
+        if (item.y_pos < minY) minY = item.y_pos;
+        if (item.x_pos + w > maxX) maxX = item.x_pos + w;
+        if (item.y_pos + h > maxY) maxY = item.y_pos + h;
+      }
+    });
+
+    if (minX === Infinity || minY === Infinity) return;
+
+    const padding = 40;
+    const zoneX = Math.round((minX - padding) / 20) * 20;
+    const zoneY = Math.round((minY - padding) / 20) * 20;
+    const zoneW = Math.round((maxX - minX + padding * 2) / 20) * 20;
+    const zoneH = Math.round((maxY - minY + padding * 2) / 20) * 20;
+
+    const name = prompt("ENTER CATEGORY ZONE NAME / DESIGNATION:");
+    if (!name || !name.trim()) return;
+
+    try {
+      const res = await fetch("/api/areas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim().toUpperCase(),
+          x_pos: zoneX,
+          y_pos: zoneY,
+          width: zoneW,
+          height: zoneH,
+          color: "rgba(0, 170, 255, 0.08)"
+        })
+      });
+      const data = await res.json();
+      setAreas(prev => [...prev, data]);
+      setSelectedNodes(prev => [...prev, { id: data.id, type: "area" }]);
+    } catch (err) {
+      console.error("Bulk create zone failed:", err);
+    }
+  };
+
+  const handleBulkExport = () => {
+    const selectedBooks = selectedNodes.filter(n => n.type === "book");
+    const selectedNotes = selectedNodes.filter(n => n.type === "note");
+
+    if (selectedBooks.length === 0 && selectedNotes.length === 0) return;
+
+    let md = `# AETHER WORKSPACE EXPORT — CONSOLIDATED TELEMETRY\n`;
+    md += `Export Date: ${new Date().toLocaleDateString()} | Active Selected Modules: ${selectedNodes.length}\n\n---\n\n`;
+
+    if (selectedBooks.length > 0) {
+      md += `## II. REVIEWED MODULES // BOOKS\n\n`;
+      selectedBooks.forEach(sel => {
+        const book = booksRef.current.find(b => b.id === sel.id);
+        if (!book) return;
+
+        const ratingStars = "★".repeat(book.rating) + "☆".repeat(5 - book.rating);
+        md += `### ${book.title.toUpperCase()}\n`;
+        md += `**Author:** ${book.author || "Unknown"}\n`;
+        md += `**Rating:** ${ratingStars} (${book.rating}/5)\n`;
+        md += `**Status:** ${book.status}\n\n`;
+
+        const cleanReview = (book.review || "")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<[^>]+>/g, "");
+        
+        md += `#### REVIEW LOG:\n${cleanReview || "No review content recorded."}\n\n`;
+
+        const bookQuotes = quotesRef.current.filter(q => q.book_id === book.id);
+        if (bookQuotes.length > 0) {
+          md += `#### SATELLITE CITATIONS:\n`;
+          bookQuotes.forEach(q => {
+            md += `> ${q.quote}\n\n`;
+          });
+        }
+        md += `\n---\n\n`;
+      });
+    }
+
+    if (selectedNotes.length > 0) {
+      md += `## III. SYSTEM MEMOS // NOTES\n\n`;
+      selectedNotes.forEach(sel => {
+        const note = notesRef.current.find(n => n.id === sel.id);
+        if (!note) return;
+
+        const cleanContent = (note.content || "")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<[^>]+>/g, "");
+
+        md += `### NOTE [${note.id.substring(0, 8).toUpperCase()}]\n`;
+        md += `${cleanContent}\n\n`;
+        md += `\n---\n\n`;
+      });
+    }
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `aether_bulk_export_${new Date().toISOString().slice(0,10)}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const focusedCluster = useMemo(() => {
@@ -420,6 +687,7 @@ export default function Canvas() {
   const areasRef = useRef(areas);
   const notesRef = useRef(notes);
   const linksRef = useRef(links);
+  const selectedNodesRef = useRef(selectedNodes);
 
   useEffect(() => {
     connectionSourceRef.current = connectionSource;
@@ -428,7 +696,8 @@ export default function Canvas() {
     areasRef.current = areas;
     notesRef.current = notes;
     linksRef.current = links;
-  }, [connectionSource, books, quotes, areas, notes, links]);
+    selectedNodesRef.current = selectedNodes;
+  }, [connectionSource, books, quotes, areas, notes, links, selectedNodes]);
 
   async function fetchBooks() {
     try {
@@ -483,12 +752,13 @@ export default function Canvas() {
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     fetchBooks();
     fetchAreas();
     fetchNotes();
     fetchLinks();
     fetchPresets();
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const createPreset = async () => {
@@ -859,10 +1129,22 @@ export default function Canvas() {
 
   const handleAddBook = async (bookData) => {
     try {
-      const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
-      const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
-      const x_pos = (widthFactor - pan.x) / scale - 96;
-      const y_pos = (heightFactor - pan.y) / scale - 150;
+      let x_pos, y_pos;
+      if (pendingPlacement) {
+        x_pos = pendingPlacement.x;
+        y_pos = pendingPlacement.y;
+        setPendingPlacement(null);
+      } else {
+        const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
+        const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
+        x_pos = (widthFactor - pan.x) / scale - 96;
+        y_pos = (heightFactor - pan.y) / scale - 150;
+      }
+
+      if (snapToGrid) {
+        x_pos = Math.round(x_pos / 20) * 20;
+        y_pos = Math.round(y_pos / 20) * 20;
+      }
 
       const res = await fetch("/api/books", {
         method: "POST",
@@ -1124,13 +1406,28 @@ export default function Canvas() {
     }
   };
 
-  const handleCreateNote = async () => {
-    const currentPan = panRef.current;
-    const currentScale = scaleRef.current;
-    const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
-    const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
-    const x_pos = (widthFactor - currentPan.x) / currentScale - 110;
-    const y_pos = (heightFactor - currentPan.y) / currentScale - 75;
+  const handleCreateNote = async (customX = null, customY = null) => {
+    let x_pos = customX;
+    let y_pos = customY;
+    if (x_pos === null || y_pos === null) {
+      if (pendingPlacement) {
+        x_pos = pendingPlacement.x;
+        y_pos = pendingPlacement.y;
+        setPendingPlacement(null);
+      } else {
+        const currentPan = panRef.current;
+        const currentScale = scaleRef.current;
+        const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
+        const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
+        x_pos = (widthFactor - currentPan.x) / currentScale - 110;
+        y_pos = (heightFactor - currentPan.y) / currentScale - 75;
+      }
+    }
+
+    if (snapToGrid) {
+      x_pos = Math.round(x_pos / 20) * 20;
+      y_pos = Math.round(y_pos / 20) * 20;
+    }
     
     try {
       const res = await fetch("/api/notes", {
@@ -1428,13 +1725,61 @@ export default function Canvas() {
     }
   };
 
+  const handleCanvasContextMenu = (e) => {
+    // If clicking inside cards, handles, or buttons, ignore
+    if (
+      e.target.closest(".aero-panel") || 
+      e.target.closest(".connector-handle") || 
+      e.target.closest("button") || 
+      e.target.closest("input") || 
+      e.target.closest("dialog") ||
+      e.target.closest(".rich-content")
+    ) {
+      return;
+    }
+    e.preventDefault();
+    
+    // Calculate client mouse position
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    // Calculate coordinates on the canvas workspace
+    const canvasX = (clickX - pan.x) / scale;
+    const canvasY = (clickY - pan.y) / scale;
+    
+    setContextMenu({
+      x: clickX,
+      y: clickY,
+      canvasX,
+      canvasY
+    });
+  };
+
   // Pointer drag/pan handlers
   const handleCanvasPointerDown = (e) => {
+    setContextMenu(null);
     if (focusNode) setFocusNode(null);
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const startX = (e.clientX - rect.left - pan.x) / scale;
+    const startY = (e.clientY - rect.top - pan.y) / scale;
+
+    // Shift-click/drag starts lasso selection
+    if (e.shiftKey) {
+      dragRef.current = {
+        type: "lasso",
+        startX,
+        startY,
+      };
+      setTempLassoBox({ x: startX, y: startY, w: 0, h: 0 });
+      return;
+    }
+
+    // Normal click clears selection
+    setSelectedNodes([]);
+
     if (isDrawingMode) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const startX = (e.clientX - rect.left - pan.x) / scale;
-      const startY = (e.clientY - rect.top - pan.y) / scale;
       dragRef.current = {
         type: "drawing",
         startX,
@@ -1475,6 +1820,24 @@ export default function Canvas() {
       containedItems = { books: containedBooks, quotes: containedQuotes, notes: containedNotes };
     }
 
+    // Check if item is in selection for relative group dragging
+    const isSelected = selectedNodesRef.current.some((n) => n.id === id && n.type === type);
+    let groupItems = null;
+    if (isSelected) {
+      groupItems = selectedNodesRef.current.map((node) => {
+        const list = node.type === "book" ? booksRef.current : (node.type === "quote" ? quotesRef.current : (node.type === "area" ? areasRef.current : notesRef.current));
+        const itemObj = list.find((i) => i.id === node.id);
+        return {
+          id: node.id,
+          type: node.type,
+          startX: itemObj ? itemObj.x_pos : 0,
+          startY: itemObj ? itemObj.y_pos : 0,
+          startWidth: itemObj ? (itemObj.width || 0) : 0,
+          startHeight: itemObj ? (itemObj.height || 0) : 0,
+        };
+      });
+    }
+
     dragRef.current = {
       type,
       id,
@@ -1488,6 +1851,7 @@ export default function Canvas() {
       pointerId,
       targetEl,
       containedItems,
+      groupItems,
     };
   }, []);
 
@@ -1507,6 +1871,17 @@ export default function Canvas() {
         x: prev.x + e.movementX,
         y: prev.y + e.movementY,
       }));
+    } else if (drag.type === "lasso") {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const currentX = (e.clientX - rect.left - pan.x) / scale;
+      const currentY = (e.clientY - rect.top - pan.y) / scale;
+      
+      const x = Math.min(drag.startX, currentX);
+      const y = Math.min(drag.startY, currentY);
+      const w = Math.abs(drag.startX - currentX);
+      const h = Math.abs(drag.startY - currentY);
+      
+      setTempLassoBox({ x, y, w, h });
     } else if (drag.type === "drawing") {
       const rect = canvasRef.current.getBoundingClientRect();
       const currentX = (e.clientX - rect.left - pan.x) / scale;
@@ -1533,6 +1908,64 @@ export default function Canvas() {
       }
 
       drag.hasMoved = true;
+
+      // Relative group drag support
+      if (drag.groupItems) {
+        setBooks((prev) =>
+          prev.map((b) => {
+            const match = drag.groupItems.find((gi) => gi.id === b.id && gi.type === "book");
+            if (!match) return b;
+            let itemX = match.startX + deltaX;
+            let itemY = match.startY + deltaY;
+            if (snapToGrid) {
+              itemX = Math.round(itemX / 20) * 20;
+              itemY = Math.round(itemY / 20) * 20;
+            }
+            return { ...b, x_pos: itemX, y_pos: itemY };
+          })
+        );
+        setNotes((prev) =>
+          prev.map((n) => {
+            const match = drag.groupItems.find((gi) => gi.id === n.id && gi.type === "note");
+            if (!match) return n;
+            let itemX = match.startX + deltaX;
+            let itemY = match.startY + deltaY;
+            if (snapToGrid) {
+              itemX = Math.round(itemX / 20) * 20;
+              itemY = Math.round(itemY / 20) * 20;
+            }
+            return { ...n, x_pos: itemX, y_pos: itemY };
+          })
+        );
+        setAreas((prev) =>
+          prev.map((a) => {
+            const match = drag.groupItems.find((gi) => gi.id === a.id && gi.type === "area");
+            if (!match) return a;
+            let itemX = match.startX + deltaX;
+            let itemY = match.startY + deltaY;
+            if (snapToGrid) {
+              itemX = Math.round(itemX / 20) * 20;
+              itemY = Math.round(itemY / 20) * 20;
+            }
+            return { ...a, x_pos: itemX, y_pos: itemY };
+          })
+        );
+        setQuotes((prev) =>
+          prev.map((q) => {
+            const match = drag.groupItems.find((gi) => gi.id === q.id && gi.type === "quote");
+            if (!match) return q;
+            let itemX = match.startX + deltaX;
+            let itemY = match.startY + deltaY;
+            if (snapToGrid) {
+              itemX = Math.round(itemX / 20) * 20;
+              itemY = Math.round(itemY / 20) * 20;
+            }
+            return { ...q, x_pos: itemX, y_pos: itemY };
+          })
+        );
+        return;
+      }
+
       let newX = drag.startItemX + deltaX;
       let newY = drag.startItemY + deltaY;
 
@@ -1662,7 +2095,94 @@ export default function Canvas() {
       } catch (err) {}
     }
 
-    if (drag.type === "drawing") {
+    // Persist group dragging coordinate changes
+    if (drag.groupItems && drag.hasMoved) {
+      drag.groupItems.forEach((item) => {
+        if (item.type === "book") {
+          const book = booksRef.current.find((b) => b.id === item.id);
+          if (book) {
+            fetch("/api/books", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(book),
+            });
+          }
+        } else if (item.type === "note") {
+          const note = notesRef.current.find((n) => n.id === item.id);
+          if (note) {
+            fetch("/api/notes", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(note),
+            });
+          }
+        } else if (item.type === "area") {
+          const area = areasRef.current.find((a) => a.id === item.id);
+          if (area) {
+            fetch("/api/areas", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(area),
+            });
+          }
+        } else if (item.type === "quote") {
+          const quote = quotesRef.current.find((q) => q.id === item.id);
+          if (quote) {
+            fetch("/api/quotes", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(quote),
+            });
+          }
+        }
+      });
+      dragRef.current = null;
+      return;
+    }
+
+    if (drag.type === "lasso") {
+      if (tempLassoBox && tempLassoBox.w > 5 && tempLassoBox.h > 5) {
+        const lx1 = tempLassoBox.x;
+        const ly1 = tempLassoBox.y;
+        const lx2 = tempLassoBox.x + tempLassoBox.w;
+        const ly2 = tempLassoBox.y + tempLassoBox.h;
+
+        const newSelected = [];
+
+        booksRef.current.forEach((b) => {
+          const w = 192;
+          const h = b.cover_url ? 320 : 160;
+          const intersects = !(b.x_pos + w < lx1 || b.x_pos > lx2 || b.y_pos + h < ly1 || b.y_pos > ly2);
+          if (intersects) newSelected.push({ id: b.id, type: "book" });
+        });
+
+        notesRef.current.forEach((n) => {
+          const w = n.width || 220;
+          const h = n.height || 150;
+          const intersects = !(n.x_pos + w < lx1 || n.x_pos > lx2 || n.y_pos + h < ly1 || n.y_pos > ly2);
+          if (intersects) newSelected.push({ id: n.id, type: "note" });
+        });
+
+        areasRef.current.forEach((a) => {
+          const w = a.width || 200;
+          const h = a.height || 200;
+          const intersects = !(a.x_pos + w < lx1 || a.x_pos > lx2 || a.y_pos + h < ly1 || a.y_pos > ly2);
+          if (intersects) newSelected.push({ id: a.id, type: "area" });
+        });
+
+        quotesRef.current.forEach((q) => {
+          const w = 140;
+          const h = 80;
+          const intersects = !(q.x_pos + w < lx1 || q.x_pos > lx2 || q.y_pos + h < ly1 || q.y_pos > ly2);
+          if (intersects) newSelected.push({ id: q.id, type: "quote" });
+        });
+
+        setSelectedNodes(newSelected);
+      } else {
+        setSelectedNodes([]);
+      }
+      setTempLassoBox(null);
+    } else if (drag.type === "drawing") {
       if (tempBox && tempBox.w > 20 && tempBox.h > 20) {
         setActiveDialog({ type: "create-zone", tempBox });
       } else {
@@ -1680,13 +2200,24 @@ export default function Canvas() {
           });
         }
       } else {
-        if (connectionSourceRef.current) {
-          createLink(connectionSourceRef.current, { id: drag.id, type: "book" });
-          setConnectionSource(null);
+        // Handle click on book node
+        if (e.shiftKey) {
+          const isSelected = selectedNodesRef.current.some((n) => n.id === drag.id && n.type === "book");
+          setSelectedNodes((prev) =>
+            isSelected
+              ? prev.filter((n) => !(n.id === drag.id && n.type === "book"))
+              : [...prev, { id: drag.id, type: "book" }]
+          );
         } else {
-          const book = booksRef.current.find((b) => b.id === drag.id);
-          if (book) {
-            setSelectedBook(book);
+          setSelectedNodes([]);
+          if (connectionSourceRef.current) {
+            createLink(connectionSourceRef.current, { id: drag.id, type: "book" });
+            setConnectionSource(null);
+          } else {
+            const book = booksRef.current.find((b) => b.id === drag.id);
+            if (book) {
+              setSelectedBook(book);
+            }
           }
         }
       }
@@ -1699,6 +2230,17 @@ export default function Canvas() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(quote),
           });
+        }
+      } else {
+        if (e.shiftKey) {
+          const isSelected = selectedNodesRef.current.some((n) => n.id === drag.id && n.type === "quote");
+          setSelectedNodes((prev) =>
+            isSelected
+              ? prev.filter((n) => !(n.id === drag.id && n.type === "quote"))
+              : [...prev, { id: drag.id, type: "quote" }]
+          );
+        } else {
+          setSelectedNodes([]);
         }
       }
     } else if (drag.type === "area" || drag.type === "area-resize") {
@@ -1749,6 +2291,17 @@ export default function Canvas() {
             }
           });
         }
+      } else {
+        if (e.shiftKey && drag.type === "area") {
+          const isSelected = selectedNodesRef.current.some((n) => n.id === drag.id && n.type === "area");
+          setSelectedNodes((prev) =>
+            isSelected
+              ? prev.filter((n) => !(n.id === drag.id && n.type === "area"))
+              : [...prev, { id: drag.id, type: "area" }]
+          );
+        } else {
+          setSelectedNodes([]);
+        }
       }
     } else if (drag.type === "note" || drag.type === "note-resize") {
       if (drag.type === "note") {
@@ -1762,9 +2315,19 @@ export default function Canvas() {
             });
           }
         } else {
-          if (connectionSourceRef.current) {
-            createLink(connectionSourceRef.current, { id: drag.id, type: "note" });
-            setConnectionSource(null);
+          if (e.shiftKey) {
+            const isSelected = selectedNodesRef.current.some((n) => n.id === drag.id && n.type === "note");
+            setSelectedNodes((prev) =>
+              isSelected
+                ? prev.filter((n) => !(n.id === drag.id && n.type === "note"))
+                : [...prev, { id: drag.id, type: "note" }]
+            );
+          } else {
+            setSelectedNodes([]);
+            if (connectionSourceRef.current) {
+              createLink(connectionSourceRef.current, { id: drag.id, type: "note" });
+              setConnectionSource(null);
+            }
           }
         }
       }
@@ -1796,6 +2359,7 @@ export default function Canvas() {
         if (connectionSourceRef.current) {
           setConnectionSource(null);
         }
+        setSelectedNodes([]);
       }
 
       if (!isTyping) {
@@ -1868,6 +2432,7 @@ export default function Canvas() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onContextMenu={handleCanvasContextMenu}
       style={{ cursor: "grab" }}
     >
       {/* Static deep space stars */}
@@ -1919,6 +2484,15 @@ export default function Canvas() {
           className="aero-button bg-[#00aaff]/15 hover:bg-[#00aaff]/30 border border-[#00aaff]/30 text-[#00aaff] text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold"
         >
           TIDY CANVAS
+        </button>
+
+        <button
+          id="hud-telemetry-dashboard-btn"
+          type="button"
+          onClick={() => setShowTelemetryDashboard(true)}
+          className="aero-button bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5"
+        >
+          <span>📊</span> TELEMETRY DASHBOARD
         </button>
         
         {/* Line & Grid toggles */}
@@ -2372,6 +2946,7 @@ export default function Canvas() {
                 isFocused={focusNode && focusNode.id === area.id && focusNode.type === "area"}
                 onToggleFocus={(zoom) => handleToggleFocus(area.id, "area", zoom)}
                 isHighlighted={teleportHighlightNodeId === area.id}
+                isSelected={selectedNodes.some((n) => n.id === area.id && n.type === "area")}
               />
             </div>
           );
@@ -2399,6 +2974,7 @@ export default function Canvas() {
                 isFocused={focusNode && focusNode.id === note.id && focusNode.type === "note"}
                 onToggleFocus={(zoom) => handleToggleFocus(note.id, "note", zoom)}
                 isHighlighted={teleportHighlightNodeId === note.id}
+                isSelected={selectedNodes.some((n) => n.id === note.id && n.type === "note")}
               />
             </div>
           );
@@ -2415,6 +2991,21 @@ export default function Canvas() {
               borderWidth: "1px",
               borderStyle: "dashed",
               zIndex: 1,
+            }}
+          />
+        )}
+
+        {tempLassoBox && (
+          <div
+            className="absolute border border-dashed border-purple-500 bg-purple-500/10 pointer-events-none rounded-lg shadow-[0_0_15px_rgba(168,85,247,0.15)]"
+            style={{
+              left: tempLassoBox.x,
+              top: tempLassoBox.y,
+              width: tempLassoBox.w,
+              height: tempLassoBox.h,
+              borderWidth: "1.5px",
+              borderStyle: "dashed",
+              zIndex: 999,
             }}
           />
         )}
@@ -2796,6 +3387,7 @@ export default function Canvas() {
                 quote={quote}
                 onDragStart={handleItemDragStart}
                 onDelete={handleDeleteQuote}
+                isSelected={selectedNodes.some((n) => n.id === quote.id && n.type === "quote")}
               />
             </div>
           );
@@ -2820,6 +3412,7 @@ export default function Canvas() {
                 isFocused={focusNode && focusNode.id === book.id && focusNode.type === "book"}
                 onToggleFocus={(zoom) => handleToggleFocus(book.id, "book", zoom)}
                 isHighlighted={teleportHighlightNodeId === book.id}
+                isSelected={selectedNodes.some((n) => n.id === book.id && n.type === "book")}
               />
             </div>
           );
@@ -2857,6 +3450,9 @@ export default function Canvas() {
       )}
 
       <SearchModal
+        isOpen={showSearchModal}
+        onOpen={() => setShowSearchModal(true)}
+        onClose={() => setShowSearchModal(false)}
         onAddBook={handleAddBook}
         onAddNote={handleCreateNote}
         onTidyCanvas={handleTidyCanvas}
@@ -2867,6 +3463,205 @@ export default function Canvas() {
         onZoomIn={() => setScale((prev) => Math.min(prev + 0.15, 3))}
         onZoomOut={() => setScale((prev) => Math.max(prev - 0.15, 0.15))}
       />
+
+      {showTelemetryDashboard && (
+        <TelemetryDashboard
+          books={books}
+          notes={notes}
+          areas={areas}
+          links={links}
+          quotes={quotes}
+          onClose={() => setShowTelemetryDashboard(false)}
+          onTeleport={centerOnNode}
+        />
+      )}
+
+      {selectedNodes.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 flex flex-col md:flex-row items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-white/10 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl pointer-events-auto">
+          {/* Status Label */}
+          <div className="flex flex-col font-mono text-[9px] tracking-widest text-[#00aaff] border-r border-white/10 pr-4">
+            <span className="font-bold">SELECTOR MATRIX ACTIVE</span>
+            <span className="text-white/40 mt-0.5">[{selectedNodes.length} MODULES DETECTED]</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[9px] font-mono">
+            {/* Color Palette Selector for notes/areas */}
+            <div className="flex gap-1 items-center bg-black/40 px-2 py-1 rounded border border-white/5 h-6">
+              <span className="text-white/40 mr-1.5">COLOR:</span>
+              {[
+                { val: "rgba(0, 170, 255, 0.08)", hex: "#00aaff", label: "Blue" },
+                { val: "rgba(168, 85, 247, 0.08)", hex: "#a855f7", label: "Purple" },
+                { val: "rgba(34, 197, 94, 0.08)", hex: "#22c55e", label: "Green" },
+                { val: "rgba(239, 68, 68, 0.08)", hex: "#ef4444", label: "Red" },
+                { val: "rgba(234, 179, 8, 0.08)", hex: "#eab308", label: "Yellow" }
+              ].map((theme) => (
+                <button
+                  key={theme.val}
+                  type="button"
+                  onClick={() => handleBulkColor(theme.val)}
+                  className="w-3.5 h-3.5 rounded-full border border-white/20 transition-transform hover:scale-125 cursor-pointer"
+                  style={{ backgroundColor: theme.hex }}
+                  title={`Apply ${theme.label} theme`}
+                />
+              ))}
+            </div>
+
+            {/* Grid Align Action */}
+            <button
+              type="button"
+              onClick={handleBulkArrangeGrid}
+              className="px-2.5 py-1.5 bg-white/5 border border-white/10 hover:border-[#00aaff] hover:bg-white/10 text-white rounded transition-all cursor-pointer flex items-center gap-1"
+              title="Arrange selected books & notes in a grid"
+            >
+              <span>田</span> GRID_ALIGN
+            </button>
+
+            {/* Group into Zone Action */}
+            <button
+              type="button"
+              onClick={handleBulkCreateZone}
+              className="px-2.5 py-1.5 bg-white/5 border border-white/10 hover:border-green-500 hover:bg-white/10 text-white rounded transition-all cursor-pointer flex items-center gap-1"
+              title="Create a new Category Zone around the selection"
+            >
+              <span>⏹</span> GROUP_ZONE
+            </button>
+
+            {/* Export Selection Action */}
+            <button
+              type="button"
+              onClick={handleBulkExport}
+              className="px-2.5 py-1.5 bg-white/5 border border-white/10 hover:border-[#a855f7] hover:bg-white/10 text-white rounded transition-all cursor-pointer flex items-center gap-1"
+              title="Export selected notes & reviews to a unified Markdown document"
+            >
+              <span>↓</span> EXPORT_COMPILATION
+            </button>
+
+            {/* Delete Action */}
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              className="px-2.5 py-1.5 bg-red-950/40 border border-red-900/50 hover:border-red-500 hover:bg-red-900/40 text-red-400 rounded transition-all cursor-pointer flex items-center gap-1"
+              title="Delete all selected items"
+            >
+              <span>✕</span> DELETE
+            </button>
+
+            <div className="h-4 w-px bg-white/10 mx-1" />
+
+            {/* Clear Selection Action */}
+            <button
+              type="button"
+              onClick={() => setSelectedNodes([])}
+              className="px-2 py-1.5 text-white/50 hover:text-white transition-colors cursor-pointer"
+            >
+              CLEAR
+            </button>
+          </div>
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 p-1.5 aero-panel bg-[#0a0a0af8] border border-white/10 rounded-lg shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl pointer-events-auto"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex flex-col gap-0.5 text-[10px] font-mono tracking-wider w-44">
+            <button
+              type="button"
+              onClick={() => {
+                handleCreateNote(contextMenu.canvasX, contextMenu.canvasY);
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-[#00aaff] hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>+ CREATE NOTE</span>
+              <span className="text-[7px] text-gray-500 font-bold">N</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingPlacement({ x: contextMenu.canvasX, y: contextMenu.canvasY });
+                setShowSearchModal(true);
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-[#00aaff] hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>+ CREATE BOOK</span>
+              <span className="text-[7px] text-gray-500 font-bold">CMD+K</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsDrawingMode(true);
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-[#22c55e] hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>+ CREATE ZONE</span>
+              <span className="text-[7px] text-gray-500 font-bold">DRAG</span>
+            </button>
+            <div className="h-px bg-white/10 my-0.5 mx-1" />
+            <button
+              type="button"
+              onClick={() => {
+                handleArrangeTimeline();
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>ALIGN TIMELINE</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleTidyCanvas();
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>TIDY WORKSPACE</span>
+            </button>
+            <div className="h-px bg-white/10 my-0.5 mx-1" />
+            <button
+              type="button"
+              onClick={() => {
+                setSnapToGrid((prev) => !prev);
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>SNAP TO GRID</span>
+              <span className="text-[7px] text-gray-500 font-bold">{snapToGrid ? "ON" : "OFF"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowGrid((prev) => !prev);
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>SHOW GRID</span>
+              <span className="text-[7px] text-gray-500 font-bold">{showGrid ? "ON" : "OFF"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPan({ x: 0, y: 0 });
+                setScale(1);
+                setContextMenu(null);
+              }}
+              className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span>RESET VIEWPORT</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {showShortcutsHelp && (
         <div 

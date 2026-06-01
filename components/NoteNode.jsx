@@ -94,7 +94,7 @@ const getColorClass = (rgba) => {
   return "theme-glow-blue";
 };
 
-export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, onEdit, onStartConnection, isFocused, onToggleFocus, isHighlighted }) {
+export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, onEdit, onStartConnection, isFocused, onToggleFocus, isHighlighted, isSelected }) {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(note.content);
   const [prevNoteContent, setPrevNoteContent] = useState(note.content);
@@ -211,6 +211,8 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
       data-node-type="note"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto aero-panel group transition-shadow duration-300 ${getColorClass(note.color)} ${
         isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+      } ${
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
       style={{
         left: note.x_pos,
