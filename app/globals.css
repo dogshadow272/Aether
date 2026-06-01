@@ -1,26 +1,302 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-sans: var(--font-inter), -apple-system, sans-serif;
+  
+  /* SpaceX Aerospace Theme */
+  --bg-deep-space: #050505;
+  --aero-white: #ffffff;
+  --aero-gray: #888888;
+  --aero-dark: #121212;
+  --aero-border: rgba(255, 255, 255, 0.15);
+  --aero-blue: #00aaff;
+  
+  --glass-bg: rgba(10, 10, 10, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --text-primary: #f0f0f0;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-deep-space);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  background-image: radial-gradient(circle at center, #111 0%, #050505 100%);
 }
+
+/* Subtle Stars */
+.space-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  background-image: 
+    radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.4), rgba(0,0,0,0)),
+    radial-gradient(1.5px 1.5px at 30% 50%, rgba(255,255,255,0.6), rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 70% 30%, rgba(255,255,255,0.3), rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 80% 80%, rgba(255,255,255,0.8), rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* Aerospace Panels */
+.aero-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--aero-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.aero-panel:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 10px 40px rgba(0, 170, 255, 0.1);
+}
+
+.aero-header {
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--aero-border);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+}
+
+.hud-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--aero-gray);
+}
+
+/* Inputs and Buttons */
+.aero-input {
+  font-family: var(--font-sans);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--aero-white);
+  border: 1px solid var(--aero-border);
+  padding: 10px 14px;
+  outline: none;
+  border-radius: 6px;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+.aero-input:focus {
+  border-color: var(--aero-blue);
+  box-shadow: 0 0 0 1px var(--aero-blue);
+}
+
+.aero-button {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: var(--aero-white);
+  color: var(--aero-dark);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.aero-button:hover {
+  opacity: 0.9;
+}
+
+.aero-button.secondary {
+  background: transparent;
+  color: var(--aero-white);
+  border: 1px solid var(--aero-border);
+}
+
+.aero-button.secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Animated glowing line flow */
+@keyframes flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.flow-line {
+  stroke-dasharray: 4, 4;
+  animation: flow 1s linear infinite;
+}
+.flow-line-timeline {
+  stroke-dasharray: 6, 6;
+  animation: flow 2.5s linear infinite;
+}
+
+/* Card Glow Themes */
+.theme-glow-blue {
+  border-color: rgba(0, 170, 255, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 170, 255, 0.12) !important;
+}
+.theme-glow-blue:hover {
+  border-color: rgba(0, 170, 255, 0.6) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(0, 170, 255, 0.25) !important;
+}
+
+.theme-glow-purple {
+  border-color: rgba(168, 85, 247, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 15px rgba(168, 85, 247, 0.12) !important;
+}
+.theme-glow-purple:hover {
+  border-color: rgba(168, 85, 247, 0.6) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(168, 85, 247, 0.25) !important;
+}
+
+.theme-glow-green {
+  border-color: rgba(34, 197, 94, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 15px rgba(34, 197, 94, 0.12) !important;
+}
+.theme-glow-green:hover {
+  border-color: rgba(34, 197, 94, 0.6) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(34, 197, 94, 0.25) !important;
+}
+
+.theme-glow-red {
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 15px rgba(239, 68, 68, 0.12) !important;
+}
+.theme-glow-red:hover {
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(239, 68, 68, 0.25) !important;
+}
+
+.theme-glow-yellow {
+  border-color: rgba(234, 179, 8, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 15px rgba(234, 179, 8, 0.12) !important;
+}
+.theme-glow-yellow:hover {
+  border-color: rgba(234, 179, 8, 0.6) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(234, 179, 8, 0.25) !important;
+}
+
+/* Smooth focusing transition for canvas panning */
+.focus-transition {
+  transition: transform 0.45s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+
+/* contenteditable placeholder support */
+[contenteditable]:empty::before {
+  content: attr(placeholder);
+  color: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+  display: block;
+}
+
+/* Rich Text Editor List Styles (Overriding Tailwind Resets) */
+#review-text-area ul {
+  list-style-type: disc !important;
+  margin-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+  padding-left: 0.5rem !important;
+}
+
+#review-text-area ol {
+  list-style-type: decimal !important;
+  margin-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+  padding-left: 0.5rem !important;
+}
+
+#review-text-area li {
+  margin-bottom: 0.25rem !important;
+  list-style-position: outside !important;
+  display: list-item !important;
+}
+
+/* Rich Text Editor Heading Styles (Solid Bar Color with Text inside, Space-Themed) */
+.rich-content h1,
+#review-text-area h1 {
+  background: linear-gradient(90deg, #00aaff 0%, #a855f7 100%) !important;
+  color: #030712 !important;
+  padding: 6px 12px !important;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.5rem !important;
+  font-size: 1.05rem !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  border-radius: 2px !important;
+  border: none !important;
+  box-shadow: 0 0 15px rgba(0, 170, 255, 0.2) !important;
+  display: block !important;
+  width: 100% !important;
+}
+
+.rich-content h2,
+#review-text-area h2 {
+  background: linear-gradient(90deg, #0055ff 0%, #00aaff 100%) !important;
+  color: #030712 !important;
+  padding: 5px 10px !important;
+  margin-top: 1rem !important;
+  margin-bottom: 0.4rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  border-radius: 2px !important;
+  border: none !important;
+  box-shadow: 0 0 15px rgba(0, 170, 255, 0.15) !important;
+  display: block !important;
+  width: 100% !important;
+}
+
+.rich-content h3,
+#review-text-area h3 {
+  background: linear-gradient(90deg, #7c3aed 0%, #a855f7 100%) !important;
+  color: #ffffff !important;
+  padding: 4px 8px !important;
+  margin-top: 0.85rem !important;
+  margin-bottom: 0.35rem !important;
+  font-size: 0.85rem !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  border-radius: 2px !important;
+  border: none !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.15) !important;
+  display: block !important;
+  width: 100% !important;
+}
+
+/* Ensure all text wraps cleanly and breaks long lines */
+.rich-content,
+#review-text-area {
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+}
+
+/* Aerospace blueprint/workbench background grid */
+.aero-grid {
+  background-size: 80px 80px, 20px 20px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255, 255, 255, 0.01) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
+}
+
+
+
+
+

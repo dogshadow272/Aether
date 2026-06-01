@@ -1,0 +1,89 @@
+import { NextResponse } from 'next/server';
+import db from '@/lib/db';
+import { syncNoteToDisk, deleteNoteFromDisk } from '@/lib/sync';
+
+export async function GET() {
+  try {
+    const notes = db.prepare('SELECT * FROM notes').all();
+    return NextResponse.json(notes);
+  } catch (error) {
+    console.error('Failed to fetch notes:', error);
+    return NextResponse.json({ error: 'Failed to fetch notes' }, { status: 500 });
+  }
+}
+
+export async function POST(request) {
+  try {
+    const data = await request.json();
+    const id = crypto.randomUUID();
+    
+    const stmt = db.prepare(`
+      INSERT INTO notes (id, content, x_pos, y_pos, width, height, color, wrap_text)
+      VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @color, @wrap_text)
+    `);
+    
+    stmt.run({
+      id,
+      content: data.content || 'DOUBLE-CLICK TO EDIT NOTE',
+      x_pos: data.x_pos || 0,
+      y_pos: data.y_pos || 0,
+      width: data.width || 220,
+      height: data.height || 150,
+      color: data.color || 'rgba(255, 255, 255, 0.08)',
+      wrap_text: data.wrap_text !== undefined ? (data.wrap_text ? 1 : 0) : 1
+    });
+
+    const newNote = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+    syncNoteToDisk(newNote);
+    return NextResponse.json(newNote);
+  } catch (error) {
+    console.error('Failed to add note:', error);
+    return NextResponse.json({ error: 'Failed to add note' }, { status: 500 });
+  }
+}
+
+export async function PUT(request) {
+  try {
+    const data = await request.json();
+    const { id, content, x_pos, y_pos, width, height, color, wrap_text } = data;
+    
+    const stmt = db.prepare(`
+      UPDATE notes
+      SET content = @content, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, color = @color, wrap_text = @wrap_text
+      WHERE id = @id
+    `);
+    
+    stmt.run({
+      id,
+      content,
+      x_pos,
+      y_pos,
+      width,
+      height,
+      color,
+      wrap_text: wrap_text !== undefined ? (wrap_text ? 1 : 0) : 1
+    });
+    
+    const updatedNote = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+    syncNoteToDisk(updatedNote);
+    return NextResponse.json(updatedNote);
+  } catch (error) {
+    console.error('Failed to update note:', error);
+    return NextResponse.json({ error: 'Failed to update note' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
+
+    deleteNoteFromDisk(id);
+    db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete note:', error);
+    return NextResponse.json({ error: 'Failed to delete note' }, { status: 500 });
+  }
+}
