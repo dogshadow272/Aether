@@ -246,13 +246,18 @@ export default function Canvas() {
   const [isFocusing, setIsFocusing] = useState(false);
   const [showIndex, setShowIndex] = useState(false);
   const [canvasFilter, setCanvasFilter] = useState("");
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [teleportHighlightNodeId, setTeleportHighlightNodeId] = useState(null);
   
   const panRef = useRef(pan);
-  panRef.current = pan;
   const scaleRef = useRef(scale);
   const presetsRef = useRef(presets);
-  presetsRef.current = presets;
-  scaleRef.current = scale;
+
+  useEffect(() => {
+    panRef.current = pan;
+    scaleRef.current = scale;
+    presetsRef.current = presets;
+  }, [pan, scale, presets]);
   const [showTimeline, setShowTimeline] = useState(true);
   const [showConnections, setShowConnections] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
@@ -266,10 +271,14 @@ export default function Canvas() {
   const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
   const [focusNode, setFocusNode] = useState(null); // { id: string, type: 'book' | 'note' | 'quote' }
 
-  const handleToggleFocus = (id, type) => {
+  const handleToggleFocus = (id, type, shouldZoom = false) => {
     setFocusNode((prev) => {
-      if (prev && prev.id === id && prev.type === type) {
+      const isAlreadyFocused = prev && prev.id === id && prev.type === type;
+      if (isAlreadyFocused) {
         return null;
+      }
+      if (shouldZoom) {
+        setTimeout(() => centerOnNode(id, type), 50);
       }
       return { id, type };
     });
@@ -343,32 +352,85 @@ export default function Canvas() {
 
     return { nodeIds, linkIds, quoteIds };
   }, [focusNode, links, quotes, books, notes, areas]);
+
+  const graphMetrics = useMemo(() => {
+    // Build a list of all nodes
+    const allNodes = [
+      ...books.map(b => ({ id: b.id, title: b.title, type: "book", node: b })),
+      ...notes.map(n => ({ id: n.id, title: n.content.replace(/<[^>]*>/g, '').substring(0, 20) || `Note ${n.id.slice(0, 4)}`, type: "note", node: n }))
+    ];
+
+    if (allNodes.length === 0) {
+      return { orphans: [], hubs: [], componentsCount: 0 };
+    }
+
+    // Build adjacency list for undirected graph traversal
+    const adj = {};
+    allNodes.forEach(n => { adj[n.id] = []; });
+    
+    links.forEach(l => {
+      if (adj[l.source_id] && adj[l.target_id]) {
+        adj[l.source_id].push(l.target_id);
+        adj[l.target_id].push(l.source_id);
+      }
+    });
+
+    const orphans = [];
+    const hubs = [];
+
+    allNodes.forEach(n => {
+      const connections = adj[n.id].length;
+      if (connections === 0) {
+        orphans.push(n);
+      } else if (connections >= 3) {
+        hubs.push(n);
+      }
+    });
+
+    // Calculate component count using BFS/DFS
+    const visited = new Set();
+    let componentsCount = 0;
+
+    allNodes.forEach(n => {
+      if (!visited.has(n.id)) {
+        componentsCount++;
+        // BFS traversal
+        const queue = [n.id];
+        visited.add(n.id);
+        while (queue.length > 0) {
+          const curr = queue.shift();
+          const neighbors = adj[curr] || [];
+          neighbors.forEach(neigh => {
+            if (!visited.has(neigh)) {
+              visited.add(neigh);
+              queue.push(neigh);
+            }
+          });
+        }
+      }
+    });
+
+    return { orphans, hubs, componentsCount };
+  }, [books, notes, links]);
   const connectionSourceRef = useRef(connectionSource);
-  connectionSourceRef.current = connectionSource;
-
   const dragRef = useRef(null);
-
   const canvasRef = useRef(null);
   const booksRef = useRef(books);
-  booksRef.current = books;
   const quotesRef = useRef(quotes);
-  quotesRef.current = quotes;
   const areasRef = useRef(areas);
-  areasRef.current = areas;
   const notesRef = useRef(notes);
-  notesRef.current = notes;
   const linksRef = useRef(links);
-  linksRef.current = links;
 
   useEffect(() => {
-    fetchBooks();
-    fetchAreas();
-    fetchNotes();
-    fetchLinks();
-    fetchPresets();
-  }, []);
+    connectionSourceRef.current = connectionSource;
+    booksRef.current = books;
+    quotesRef.current = quotes;
+    areasRef.current = areas;
+    notesRef.current = notes;
+    linksRef.current = links;
+  }, [connectionSource, books, quotes, areas, notes, links]);
 
-  const fetchBooks = async () => {
+  async function fetchBooks() {
     try {
       const res = await fetch("/api/books");
       const data = await res.json();
@@ -378,9 +440,9 @@ export default function Canvas() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }
 
-  const fetchAreas = async () => {
+  async function fetchAreas() {
     try {
       const res = await fetch("/api/areas");
       const data = await res.json();
@@ -388,9 +450,9 @@ export default function Canvas() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }
 
-  const fetchNotes = async () => {
+  async function fetchNotes() {
     try {
       const res = await fetch("/api/notes");
       const data = await res.json();
@@ -398,9 +460,9 @@ export default function Canvas() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }
 
-  const fetchLinks = async () => {
+  async function fetchLinks() {
     try {
       const res = await fetch("/api/links");
       const data = await res.json();
@@ -408,9 +470,9 @@ export default function Canvas() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }
 
-  const fetchPresets = async () => {
+  async function fetchPresets() {
     try {
       const res = await fetch("/api/presets");
       const data = await res.json();
@@ -418,7 +480,16 @@ export default function Canvas() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchBooks();
+    fetchAreas();
+    fetchNotes();
+    fetchLinks();
+    fetchPresets();
+  }, []);
 
   const createPreset = async () => {
     const name = prompt("ENTER VIEWPORT TELEMETRY DESIGNATION:");
@@ -464,6 +535,66 @@ export default function Canvas() {
     setPan({ x: preset.pan_x, y: preset.pan_y });
     setScale(preset.scale);
     setTimeout(() => setIsFocusing(false), 450);
+  };
+
+  const centerOnNode = (nodeId, nodeType) => {
+    let node;
+    let w = 220;
+    let h = 150;
+    if (nodeType === "book") {
+      node = books.find(b => b.id === nodeId);
+      if (!node) return;
+      w = 192;
+      h = node.cover_url ? 320 : 160;
+    } else if (nodeType === "note") {
+      node = notes.find(n => n.id === nodeId);
+      if (!node) return;
+      w = node.width || 220;
+      h = node.height || 150;
+    } else if (nodeType === "area") {
+      node = areas.find(a => a.id === nodeId);
+      if (!node) return;
+      w = node.width || 200;
+      h = node.height || 200;
+    } else {
+      return;
+    }
+
+    const targetScale = nodeType === "area" && typeof window !== "undefined"
+      ? Math.max(0.4, Math.min(1, Math.min((window.innerWidth * 0.8) / w, (window.innerHeight * 0.8) / h)))
+      : 1;
+    const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
+    const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
+    
+    const targetPanX = widthFactor - (node.x_pos + w / 2) * targetScale;
+    const targetPanY = heightFactor - (node.y_pos + h / 2) * targetScale;
+
+    setIsFocusing(true);
+    setPan({ x: targetPanX, y: targetPanY });
+    setScale(targetScale);
+    setTeleportHighlightNodeId(nodeId);
+    
+    setTimeout(() => {
+      setIsFocusing(false);
+    }, 450);
+
+    setTimeout(() => {
+      setTeleportHighlightNodeId(null);
+    }, 2000);
+  };
+
+  const handleUpdateLinkSpeed = async (linkId, speed) => {
+    try {
+      const res = await fetch("/api/links", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: linkId, speed })
+      });
+      const updated = await res.json();
+      setLinks(prev => prev.map(l => l.id === linkId ? updated : l));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const createLink = async (source, target) => {
@@ -541,6 +672,20 @@ export default function Canvas() {
       });
       const data = await res.json();
       setLinks(prev => prev.map(l => l.id === linkId ? { ...l, arrow: data.arrow } : l));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateLinkShape = async (linkId, shape) => {
+    try {
+      const res = await fetch("/api/links", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: linkId, shape })
+      });
+      const data = await res.json();
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, shape: data.shape } : l));
     } catch (err) {
       console.error(err);
     }
@@ -703,10 +848,10 @@ export default function Canvas() {
 
   const getNodeMatch = (id, type) => {
     if (type === "book") {
-      const b = booksRef.current.find(book => book.id === id);
+      const b = books.find(book => book.id === id);
       return b ? getBookMatch(b) : false;
     } else if (type === "note") {
-      const n = notesRef.current.find(note => note.id === id);
+      const n = notes.find(note => note.id === id);
       return n ? getNoteMatch(n) : false;
     }
     return false;
@@ -796,6 +941,169 @@ export default function Canvas() {
       setAreas((prev) => prev.map((a) => (a.id === id ? data : a)));
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleArrangeAreaNodes = async (areaId) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    // Get all books and notes inside this area
+    const containedBooks = books.filter(b => 
+      b.x_pos >= area.x_pos &&
+      b.x_pos <= area.x_pos + area.width &&
+      b.y_pos >= area.y_pos &&
+      b.y_pos <= area.y_pos + area.height
+    );
+
+    const containedNotes = notes.filter(n => 
+      n.x_pos >= area.x_pos &&
+      n.x_pos <= area.x_pos + area.width &&
+      n.y_pos >= area.y_pos &&
+      n.y_pos <= area.y_pos + area.height
+    );
+
+    const totalNodes = containedBooks.length + containedNotes.length;
+    if (totalNodes === 0) return;
+
+    // Layout configuration
+    const padding = 40;
+    const startX = area.x_pos + padding;
+    const startY = area.y_pos + 60; // leave space for header
+    
+    // Grid calculations
+    const columns = Math.ceil(Math.sqrt(totalNodes));
+    const gapX = 240; 
+    const gapY = 360; 
+
+    let maxColX = area.x_pos + area.width;
+    let maxRowY = area.y_pos + area.height;
+
+    // We will place them in order: Books first, then Notes
+    const itemsToArrange = [
+      ...containedBooks.map(b => ({ id: b.id, type: "book", width: 192, height: b.cover_url ? 320 : 160, originalObj: b })),
+      ...containedNotes.map(n => ({ id: n.id, type: "note", width: n.width || 220, height: n.height || 150, originalObj: n }))
+    ];
+
+    setIsFocusing(true);
+
+    try {
+      for (let i = 0; i < itemsToArrange.length; i++) {
+        const col = i % columns;
+        const row = Math.floor(i / columns);
+
+        const targetX_pos = startX + col * gapX;
+        const targetY_pos = startY + row * gapY;
+
+        // Snap to 20px grid
+        const snappedX = Math.round(targetX_pos / 20) * 20;
+        const snappedY = Math.round(targetY_pos / 20) * 20;
+
+        const item = itemsToArrange[i];
+        
+        // Track bounding box of organized elements
+        const rightSide = snappedX + item.width;
+        const bottomSide = snappedY + item.height;
+        if (rightSide > maxColX) maxColX = rightSide;
+        if (bottomSide > maxRowY) maxRowY = bottomSide;
+
+        if (item.type === "book") {
+          const nextBook = { ...item.originalObj, x_pos: snappedX, y_pos: snappedY };
+          await handleUpdateBook(nextBook);
+        } else {
+          await handleEditNote(item.id, { x_pos: snappedX, y_pos: snappedY });
+        }
+      }
+
+      // Auto-resize Area bounding box to wrap elements with padding
+      const targetAreaWidth = Math.round((maxColX - area.x_pos + padding) / 20) * 20;
+      const targetAreaHeight = Math.round((maxRowY - area.y_pos + padding) / 20) * 20;
+
+      await handleUpdateArea(area.id, { width: targetAreaWidth, height: targetAreaHeight });
+    } catch (err) {
+      console.error("Failed to auto-arrange area nodes:", err);
+    } finally {
+      setTimeout(() => setIsFocusing(false), 450);
+    }
+  };
+
+  const handleArrangeTimeline = async () => {
+    if (books.length === 0) return;
+
+    // 1. Sort books chronologically by created_at (ascending)
+    const sortedBooks = [...books].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    const horizontalSpacing = 420; // safe spacing horizontally to allow satellite quotes space
+    const timelineY = 400; // timeline horizontal baseline
+
+    setIsFocusing(true);
+
+    try {
+      // Align books along baseline
+      for (let i = 0; i < sortedBooks.length; i++) {
+        const book = sortedBooks[i];
+        const targetX = 100 + i * horizontalSpacing;
+        const targetY = timelineY;
+
+        // Snap to grid
+        const snappedX = Math.round(targetX / 20) * 20;
+        const snappedY = Math.round(targetY / 20) * 20;
+
+        const nextBook = { ...book, x_pos: snappedX, y_pos: snappedY };
+        await handleUpdateBook(nextBook);
+
+        // Position quotes in orbit around this book node
+        const bookQuotes = quotes.filter(q => q.book_id === book.id);
+        for (let qIdx = 0; qIdx < bookQuotes.length; qIdx++) {
+          const quote = bookQuotes[qIdx];
+          
+          // Constellation coordinates relative to book card
+          let qX = snappedX;
+          let qY = snappedY;
+
+          // Distribute in nice directions (alternating)
+          if (qIdx === 0) {
+            // Above
+            qX = snappedX + 96 - 40;
+            qY = snappedY - 140;
+          } else if (qIdx === 1) {
+            // Below
+            qX = snappedX + 96 - 40;
+            qY = snappedY + (book.cover_url ? 320 : 160) + 80;
+          } else if (qIdx === 2) {
+            // Left
+            qX = snappedX - 160;
+            qY = snappedY + 100;
+          } else if (qIdx === 3) {
+            // Right
+            qX = snappedX + 192 + 80;
+            qY = snappedY + 100;
+          } else {
+            // Diagonal orbits for additional quotes
+            const angle = (qIdx * 45 * Math.PI) / 180;
+            qX = snappedX + 96 - 40 + Math.cos(angle) * 260;
+            qY = snappedY + 100 + Math.sin(angle) * 260;
+          }
+
+          // Snap quote to grid
+          const snappedQuoteX = Math.round(qX / 20) * 20;
+          const snappedQuoteY = Math.round(qY / 20) * 20;
+
+          // Call API to save quote coordinates
+          await fetch("/api/quotes", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: quote.id, x_pos: snappedQuoteX, y_pos: snappedQuoteY })
+          });
+
+          // Sync local state
+          setQuotes(prev => prev.map(item => item.id === quote.id ? { ...item, x_pos: snappedQuoteX, y_pos: snappedQuoteY } : item));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to auto-arrange timeline coordinates:", err);
+    } finally {
+      setTimeout(() => setIsFocusing(false), 450);
     }
   };
 
@@ -1678,69 +1986,143 @@ export default function Canvas() {
               </button>
             )}
           </div>
-        </div>
+        </div>        {/* Workspace Telemetry Dashboard */}
+        {(() => {
+          const totalBooks = books.length;
+          if (totalBooks === 0 && notes.length === 0 && links.length === 0 && areas.length === 0) return null;
 
-        {/* Reading Stats Dashboard */}
-        {books.length > 0 && (() => {
-          const toRead = books.filter(b => b.status === "To Read").length;
-          const reading = books.filter(b => b.status === "Reading").length;
           const completed = books.filter(b => b.status === "Completed").length;
-          const total = books.length;
+          const reading = books.filter(b => b.status === "Reading").length;
+          const toRead = books.filter(b => b.status === "To Read").length;
+          
           const rated = books.filter(b => b.rating > 0);
           const avgRating = rated.length > 0 ? (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1) : "—";
+          
+          const supportLnk = links.filter(l => l.type === "support").length;
+          const contrastLnk = links.filter(l => l.type === "contrast").length;
+          const questionLnk = links.filter(l => l.type === "question").length;
+          const defaultLnk = links.filter(l => l.type === "default" || !l.type).length;
+
           return (
             <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="text-[9px] hud-text font-bold text-white mb-2">LIBRARY TELEMETRY</div>
+              <div className="text-[9px] hud-text font-bold text-white mb-2">WORKSPACE TELEMETRY</div>
               
-              {/* Progress bar */}
-              <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden flex mb-2">
-                {completed > 0 && (
-                  <div 
-                    className="h-full bg-[#22c55e] transition-all duration-700" 
-                    style={{ width: `${(completed / total) * 100}%` }}
-                    title={`Completed: ${completed}`}
-                  />
-                )}
-                {reading > 0 && (
-                  <div 
-                    className="h-full bg-[#00aaff] transition-all duration-700" 
-                    style={{ width: `${(reading / total) * 100}%` }}
-                    title={`Reading: ${reading}`}
-                  />
-                )}
-                {toRead > 0 && (
-                  <div 
-                    className="h-full bg-white/15 transition-all duration-700" 
-                    style={{ width: `${(toRead / total) * 100}%` }}
-                    title={`To Read: ${toRead}`}
-                  />
-                )}
+              {/* Progress bar for books */}
+              {totalBooks > 0 && (
+                <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden flex mb-2">
+                  {completed > 0 && (
+                    <div 
+                      className="h-full bg-[#22c55e] transition-all duration-700" 
+                      style={{ width: `${(completed / totalBooks) * 100}%` }}
+                      title={`Completed: ${completed}`}
+                    />
+                  )}
+                  {reading > 0 && (
+                    <div 
+                      className="h-full bg-[#00aaff] transition-all duration-700" 
+                      style={{ width: `${(reading / totalBooks) * 100}%` }}
+                      title={`Reading: ${reading}`}
+                    />
+                  )}
+                  {toRead > 0 && (
+                    <div 
+                      className="h-full bg-white/15 transition-all duration-700" 
+                      style={{ width: `${(toRead / totalBooks) * 100}%` }}
+                      title={`To Read: ${toRead}`}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-1.5 font-mono text-[8px] text-gray-400">
+                <div className="bg-white/5 rounded p-1.5">
+                  <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Modules</div>
+                  <div className="flex justify-between"><span>Books:</span><span className="text-[#00aaff]">{totalBooks}</span></div>
+                  <div className="flex justify-between"><span>Notes:</span><span className="text-[#00aaff]">{notes.length}</span></div>
+                  <div className="flex justify-between"><span>Quotes:</span><span className="text-[#00aaff]">{quotes.length}</span></div>
+                  <div className="flex justify-between"><span>Zones:</span><span className="text-[#22c55e]">{areas.length}</span></div>
+                </div>
+                <div className="bg-white/5 rounded p-1.5">
+                  <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Relations</div>
+                  <div className="flex justify-between"><span>Support:</span><span className="text-[#22c55e]">{supportLnk}</span></div>
+                  <div className="flex justify-between"><span>Contrast:</span><span className="text-[#ef4444]">{contrastLnk}</span></div>
+                  <div className="flex justify-between"><span>Question:</span><span className="text-[#eab308]">{questionLnk}</span></div>
+                  <div className="flex justify-between"><span>Default:</span><span className="text-[#00aaff]">{defaultLnk}</span></div>
+                </div>
               </div>
 
-              {/* Stats row */}
-              <div className="grid grid-cols-3 gap-1 text-center">
-                <div className="bg-white/5 rounded px-1 py-1">
-                  <div className="text-[10px] font-bold text-[#22c55e]">{completed}</div>
-                  <div className="text-[7px] hud-text opacity-50">DONE</div>
-                </div>
-                <div className="bg-white/5 rounded px-1 py-1">
-                  <div className="text-[10px] font-bold text-[#00aaff]">{reading}</div>
-                  <div className="text-[7px] hud-text opacity-50">ACTIVE</div>
-                </div>
-                <div className="bg-white/5 rounded px-1 py-1">
-                  <div className="text-[10px] font-bold text-gray-400">{toRead}</div>
-                  <div className="text-[7px] hud-text opacity-50">QUEUE</div>
-                </div>
-              </div>
-
-              {/* Average rating */}
-              <div className="flex justify-between items-center mt-1.5 text-[8px] hud-text opacity-40">
-                <span>AVG RATING: {avgRating}</span>
-                <span>MODULES: {total}</span>
+              {/* Summary telemetry row */}
+              <div className="flex justify-between items-center mt-2 text-[8px] hud-text opacity-40 font-mono">
+                <span>AVG RATING: {avgRating} ★</span>
+                <span>TOTAL PATHS: {links.length}</span>
               </div>
             </div>
           );
         })()}
+
+        {/* Topology Analytics & Navigation Console */}
+        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
+          <div className="text-[9px] hud-text font-bold text-white mb-1">TOPOLOGY ANALYTICS</div>
+          
+          <div className="grid grid-cols-2 gap-1.5 font-mono text-[8px] text-gray-400">
+            <div className="bg-white/5 rounded p-1.5 font-mono">
+              <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Network Stats</div>
+              <div className="flex justify-between"><span>Hubs (&gt;=3):</span><span className="text-[#a855f7]">{graphMetrics.hubs.length}</span></div>
+              <div className="flex justify-between"><span>Orphans (0):</span><span className="text-[#f97316]">{graphMetrics.orphans.length}</span></div>
+              <div className="flex justify-between"><span>Clusters:</span><span className="text-white">{graphMetrics.componentsCount}</span></div>
+            </div>
+            
+            <div className="bg-white/5 rounded p-1.5 flex flex-col justify-between font-mono">
+              <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Status</div>
+              <div className="text-[7px] text-gray-500 uppercase tracking-tight leading-tight">
+                {graphMetrics.orphans.length > 0 
+                  ? `${graphMetrics.orphans.length} isolated nodes detected. click finder below.` 
+                  : "all modules connected to network topology."}
+              </div>
+            </div>
+          </div>
+
+          {/* Hub Finder List */}
+          {graphMetrics.hubs.length > 0 && (
+            <div className="bg-white/5 rounded p-1.5 flex flex-col gap-1 max-h-24 overflow-y-auto">
+              <div className="text-white font-bold text-[7px] uppercase tracking-wider font-mono">Hub Teleporters (Focus Hub)</div>
+              <div className="flex flex-col gap-1">
+                {graphMetrics.hubs.map(h => (
+                  <button
+                    key={`hub-teleport-${h.id}`}
+                    type="button"
+                    onClick={() => centerOnNode(h.id, h.type)}
+                    className="text-left font-mono text-[7px] text-[#00aaff] hover:text-[#a855f7] bg-white/5 hover:bg-white/10 px-1 py-0.5 rounded flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="truncate max-w-[120px]">{h.title}</span>
+                    <span className="text-[6px] text-gray-500 uppercase tracking-tighter">({h.type}) ⌖</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Orphan Finder List */}
+          {graphMetrics.orphans.length > 0 && (
+            <div className="bg-white/5 rounded p-1.5 flex flex-col gap-1 max-h-24 overflow-y-auto">
+              <div className="text-white font-bold text-[7px] uppercase tracking-wider font-mono">Orphan Finder (Needs Links)</div>
+              <div className="flex flex-col gap-1">
+                {graphMetrics.orphans.map(o => (
+                  <button
+                    key={`orphan-teleport-${o.id}`}
+                    type="button"
+                    onClick={() => centerOnNode(o.id, o.type)}
+                    className="text-left font-mono text-[7px] text-[#f97316] hover:text-[#00aaff] bg-white/5 hover:bg-white/10 px-1 py-0.5 rounded flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="truncate max-w-[120px]">{o.title}</span>
+                    <span className="text-[6px] text-gray-500 uppercase tracking-tighter">({o.type}) ⌖</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Workspace Backup & Recovery Console */}
         <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
@@ -1763,6 +2145,14 @@ export default function Canvas() {
               RESTORE BOARD
             </button>
           </div>
+          <button
+            id="hud-arrange-timeline-btn"
+            type="button"
+            onClick={handleArrangeTimeline}
+            className="aero-button secondary text-[8px] py-1 px-2 transition-all text-[#00aaff] border-[#00aaff]/30 font-semibold hover:bg-[#00aaff]/10 w-full"
+          >
+            ORGANIZE CHRONO-TIMELINE
+          </button>
           <input
             id="hud-restore-input"
             type="file"
@@ -1919,6 +2309,17 @@ export default function Canvas() {
             </div>
           )}
         </div>
+
+        {/* System Help Trigger */}
+        <div className="mt-3 pt-3 border-t border-white/10">
+          <button
+            type="button"
+            onClick={() => setShowShortcutsHelp(true)}
+            className="aero-button secondary text-[8px] py-1.5 px-2.5 w-full transition-all text-white font-semibold flex items-center justify-center gap-1.5 hover:border-purple-500/30"
+          >
+            <span>⌨️</span> SYSTEM SHORTCUTS REF
+          </button>
+        </div>
       </div>
 
       <div
@@ -1967,8 +2368,10 @@ export default function Canvas() {
                 onResizeStart={handleItemDragStart}
                 onDelete={handleDeleteArea}
                 onRename={handleUpdateArea}
+                onArrangeNodes={handleArrangeAreaNodes}
                 isFocused={focusNode && focusNode.id === area.id && focusNode.type === "area"}
-                onToggleFocus={() => handleToggleFocus(area.id, "area")}
+                onToggleFocus={(zoom) => handleToggleFocus(area.id, "area", zoom)}
+                isHighlighted={teleportHighlightNodeId === area.id}
               />
             </div>
           );
@@ -1994,7 +2397,8 @@ export default function Canvas() {
                 onEdit={handleEditNote}
                 onStartConnection={handleStartConnection}
                 isFocused={focusNode && focusNode.id === note.id && focusNode.type === "note"}
-                onToggleFocus={() => handleToggleFocus(note.id, "note")}
+                onToggleFocus={(zoom) => handleToggleFocus(note.id, "note", zoom)}
+                isHighlighted={teleportHighlightNodeId === note.id}
               />
             </div>
           );
@@ -2094,7 +2498,9 @@ export default function Canvas() {
             if (!sourceNode || !targetNode) return null;
 
             const { start, end } = getBestConnectionPoints(sourceNode, link.source_type, targetNode, link.target_type);
-            const pathData = getSmartBezierPath(start, end);
+            const pathData = link.shape === "straight"
+              ? `M ${start.x} ${start.y} L ${end.x} ${end.y}`
+              : getSmartBezierPath(start, end);
             const midX = (start.x + end.x) / 2;
             const midY = (start.y + end.y) / 2;
             const isMatched = (getNodeMatch(link.source_id, link.source_type) || getNodeMatch(link.target_id, link.target_type)) && (focusedCluster ? focusedCluster.linkIds.has(link.id) : true);
@@ -2157,14 +2563,28 @@ export default function Canvas() {
                   strokeDasharray={getLinkDashArray(link.type)}
                   markerStart={hasStartArrow ? `url(#arrow-${linkStyle})` : undefined}
                   markerEnd={hasEndArrow ? `url(#arrow-${linkStyle})` : undefined}
-                  className="transition-all hover:stroke-2 cursor-pointer"
+                  className={`transition-all hover:stroke-2 cursor-pointer ${
+                    link.type === "contrast" 
+                      ? "link-path-dashed" 
+                      : (link.type === "question" 
+                          ? "link-path-dotted" 
+                          : "link-path-solid")
+                  } ${
+                    link.speed === "fast" 
+                      ? "link-speed-fast" 
+                      : (link.speed === "slow" 
+                          ? "link-speed-slow" 
+                          : (link.speed === "pause" 
+                              ? "link-speed-pause" 
+                              : "link-speed-normal"))
+                  }`}
                   style={{ pointerEvents: "auto" }}
                 />
                 
                 <foreignObject
-                  x={midX - 120}
+                  x={midX - 150}
                   y={midY - 14}
-                  width={240}
+                  width={300}
                   height={28}
                   style={{ pointerEvents: "none" }}
                 >
@@ -2227,6 +2647,56 @@ export default function Canvas() {
                         </span>
                         <span className="text-[7px] text-white/40 uppercase tracking-tight">
                           {link.arrow || "none"}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Flow speed toggle (only on hover) */}
+                    <div className="flex items-center bg-black/85 border border-white/10 rounded-full px-2 py-0.5 pointer-events-auto opacity-0 group-hover/link:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const currentSpeed = link.speed || "normal";
+                          const nextSpeed = currentSpeed === "normal" ? "fast" : currentSpeed === "fast" ? "slow" : currentSpeed === "slow" ? "pause" : "normal";
+                          handleUpdateLinkSpeed(link.id, nextSpeed);
+                        }}
+                        className="text-[8px] font-mono text-white/80 hover:text-white flex items-center gap-1 select-none cursor-pointer"
+                        title={`Flow: ${link.speed || "normal"} (Click to cycle)`}
+                      >
+                        <span 
+                          className="text-[10px] leading-none font-bold transition-colors"
+                          style={{ color: getStyleHex(link.type) }}
+                        >
+                          {(link.speed || "normal") === "normal" ? "▶" : ((link.speed === "fast") ? "▶▶" : ((link.speed === "slow") ? "▷" : "⏸"))}
+                        </span>
+                        <span className="text-[7px] text-white/40 uppercase tracking-tight">
+                          {link.speed || "normal"}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Shape toggle (only on hover) */}
+                    <div className="flex items-center bg-black/85 border border-white/10 rounded-full px-2 py-0.5 pointer-events-auto opacity-0 group-hover/link:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const currentShape = link.shape || "curved";
+                          const nextShape = currentShape === "curved" ? "straight" : "curved";
+                          handleUpdateLinkShape(link.id, nextShape);
+                        }}
+                        className="text-[8px] font-mono text-white/80 hover:text-white flex items-center gap-1 select-none cursor-pointer"
+                        title={`Shape: ${link.shape || "curved"} (Click to cycle)`}
+                      >
+                        <span 
+                          className="text-[10px] leading-none font-bold transition-colors font-sans"
+                          style={{ color: getStyleHex(link.type) }}
+                        >
+                          {(link.shape || "curved") === "curved" ? "~" : "|"}
+                        </span>
+                        <span className="text-[7px] text-white/40 uppercase tracking-tight font-mono">
+                          {link.shape || "curved"}
                         </span>
                       </button>
                     </div>
@@ -2348,7 +2818,8 @@ export default function Canvas() {
                 onDragStart={handleItemDragStart}
                 onStartConnection={handleStartConnection}
                 isFocused={focusNode && focusNode.id === book.id && focusNode.type === "book"}
-                onToggleFocus={() => handleToggleFocus(book.id, "book")}
+                onToggleFocus={(zoom) => handleToggleFocus(book.id, "book", zoom)}
+                isHighlighted={teleportHighlightNodeId === book.id}
               />
             </div>
           );
@@ -2396,6 +2867,118 @@ export default function Canvas() {
         onZoomIn={() => setScale((prev) => Math.min(prev + 0.15, 3))}
         onZoomOut={() => setScale((prev) => Math.max(prev - 0.15, 0.15))}
       />
+
+      {showShortcutsHelp && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md pointer-events-auto"
+          onPointerDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onClick={() => setShowShortcutsHelp(false)}
+        >
+          <div 
+            className="aero-panel w-full max-w-lg mx-4 bg-[#0a0a0af5] border border-white/10 p-5 text-white flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="aero-header justify-between bg-white/5 border-b border-white/5 pb-2 mb-3">
+              <div className="hud-text text-white flex items-center gap-2">
+                <span>⌨️ SYSTEM_REFERENCE // CHEATSHEET</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowShortcutsHelp(false)}
+                className="text-white/40 hover:text-white transition-colors text-xs leading-none p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable cheatsheet content */}
+            <div className="overflow-y-auto pr-1 text-xs space-y-4 leading-relaxed font-sans">
+              
+              {/* Category 1: Navigation */}
+              <div>
+                <h4 className="text-[#00aaff] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                  1. Camera & Navigation
+                </h4>
+                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Pan Workspace</span><span className="text-white">Drag Empty Canvas</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Zoom Camera</span><span className="text-white">Mouse Scroll wheel</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Reset Viewport</span><span className="text-white">HOME button in Sidebar</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Snap View to Node</span><span className="text-white">Click FOCUS in Workspace Index</span></div>
+                </div>
+              </div>
+
+              {/* Category 2: Gestures */}
+              <div>
+                <h4 className="text-[#22c55e] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                  2. Board Editing Gestures
+                </h4>
+                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Move Modules</span><span className="text-white">Drag Book / Note Header</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Resize Note card</span><span className="text-white">Drag bottom-right corner (↘)</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Grid Snapping</span><span className="text-white">Toggled via SNAP TO GRID checkbox</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Spawn Zone (Area)</span><span className="text-white">Drag-draw box (Drawing Mode ON)</span></div>
+                </div>
+              </div>
+
+              {/* Category 3: Mind-Map Connections */}
+              <div>
+                <h4 className="text-[#a855f7] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                  3. Connections & Edge Routing
+                </h4>
+                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Create Connection</span><span className="text-white">Drag from card boundary connector dot</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Midpoint Controls HUD</span><span className="text-white">Hover cursor over link path line</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Classify Relation</span><span className="text-white">Click midpoint HUD style dot</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Toggle Arrowhead</span><span className="text-white">Click Arrow cycle button (— / ➡ / ↔)</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Modify Text Label</span><span className="text-white">Double-click label badge (Esc to abort)</span></div>
+                </div>
+              </div>
+
+              {/* Category 4: Focus & Presentation Modes */}
+              <div>
+                <h4 className="text-[#eab308] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                  4. Advanced Modes & Filtering
+                </h4>
+                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Command Console</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">Cmd/Ctrl + K</kbd></span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Isolate Node / Area</span><span className="text-white">Click Eye icon (👁) in Node/Area header</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Hashtag Filtering</span><span className="text-white">Click Tag in Sidebar hashtags cloud</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Slideshow Navigation</span><span className="text-white">Space / ➡ (Next), ⬅ (Prev), Esc (Exit)</span></div>
+                </div>
+              </div>
+
+              {/* Category 5: Local File Sync */}
+              <div>
+                <h4 className="text-[#ef4444] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                  5. Local Notes Sync Engine
+                </h4>
+                <p className="text-[9px] text-gray-400 mb-1 leading-normal font-sans normal-case">
+                  All board modifications are compiled to Obsidian-friendly Markdown files in real-time:
+                </p>
+                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Book Reviews</span><span className="text-white">./reviews/*.md</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Index Notes</span><span className="text-white">./notes/*.md</span></div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-white/5 mt-4 pt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowShortcutsHelp(false)}
+                className="aero-button secondary text-[9px] font-mono tracking-widest font-bold py-1.5 px-4 text-white hover:border-[#00aaff]/50"
+              >
+                CLOSE REFERENCE
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {selectedBook && (
         <ReviewModal

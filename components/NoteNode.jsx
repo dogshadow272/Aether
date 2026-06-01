@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Bold, Italic, Underline, List, ListOrdered, Link, Eye } from "lucide-react";
 import { handleContentEditableKeyDown } from "../lib/editorHelpers";
 
@@ -94,29 +94,38 @@ const getColorClass = (rgba) => {
   return "theme-glow-blue";
 };
 
-export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, onEdit, onStartConnection, isFocused, onToggleFocus }) {
+export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, onEdit, onStartConnection, isFocused, onToggleFocus, isHighlighted }) {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(note.content);
+  const [prevNoteContent, setPrevNoteContent] = useState(note.content);
   const editorRef = useRef(null);
   const cardRef = useRef(null);
+
+  if (note.content !== prevNoteContent) {
+    setPrevNoteContent(note.content);
+    if (!isEditing) {
+      setContent(note.content);
+    }
+  }
 
   const handlePointerDownResize = (e) => {
     e.stopPropagation();
     onResizeStart(note.id, "note-resize", e.clientX, e.clientY, cardRef.current, e.pointerId);
   };
 
-  // Sync state if database updates content externally
-  useEffect(() => {
-    if (!isEditing) {
-      setContent(note.content);
+  const handleEditSubmit = useCallback(() => {
+    setIsEditing(false);
+    if (content !== note.content) {
+      onEdit(note.id, { content });
     }
-  }, [note.content, isEditing]);
+  }, [content, note.content, note.id, onEdit]);
 
   // Set innerHTML once when active editing starts to prevent cursor jumping
   useEffect(() => {
     if (isEditing && editorRef.current) {
       editorRef.current.innerHTML = note.content || "";
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing]);
 
   // Debounced auto-save to database while typing
@@ -141,7 +150,7 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
     };
     window.addEventListener("pointerdown", handleWindowClick);
     return () => window.removeEventListener("pointerdown", handleWindowClick);
-  }, [isEditing, content, note.content]);
+  }, [isEditing, handleEditSubmit]);
 
   const handlePointerDownDrag = (e) => {
     if (e.target.closest("button") || e.target.closest("[contenteditable]")) return;
@@ -165,12 +174,7 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
     }, 100);
   };
 
-  const handleEditSubmit = () => {
-    setIsEditing(false);
-    if (content !== note.content) {
-      onEdit(note.id, { content });
-    }
-  };
+
 
   // Click handler to toggle checkbox statuses inside note rich text
   const handleEditorClick = (e) => {
@@ -205,7 +209,9 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
       ref={cardRef}
       data-node-id={note.id}
       data-node-type="note"
-      className={`absolute border rounded-lg flex flex-col pointer-events-auto aero-panel group ${getColorClass(note.color)}`}
+      className={`absolute border rounded-lg flex flex-col pointer-events-auto aero-panel group transition-shadow duration-300 ${getColorClass(note.color)} ${
+        isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+      }`}
       style={{
         left: note.x_pos,
         top: note.y_pos,
@@ -265,6 +271,10 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
       <div 
         className="px-3 py-1.5 border-b border-white/5 bg-white/5 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-lg select-none"
         onPointerDown={handlePointerDownDrag}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onToggleFocus) onToggleFocus(true);
+        }}
         style={{ touchAction: "none" }}
       >
         <div className="hud-text text-white font-semibold flex items-center gap-2">

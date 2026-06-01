@@ -119,8 +119,8 @@ export async function POST(request) {
 
       // Insert links
       const insertLink = db.prepare(`
-        INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, created_at)
-        VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @created_at)
+        INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, created_at)
+        VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @created_at)
       `);
       links.forEach(l => {
         insertLink.run({
@@ -132,6 +132,8 @@ export async function POST(request) {
           label: l.label || '',
           type: l.type || 'default',
           arrow: l.arrow || 'none',
+          speed: l.speed || 'normal',
+          shape: l.shape || 'curved',
           created_at: l.created_at || new Date().toISOString()
         });
       });

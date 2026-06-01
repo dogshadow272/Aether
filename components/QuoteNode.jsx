@@ -33,7 +33,7 @@ export default function QuoteNode({ quote, onDragStart, onDelete }) {
           ✕
         </button>
       </div>
-      "{quote.quote}"
+      &ldquo;{quote.quote}&rdquo;
     </div>
   );
 }

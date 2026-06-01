@@ -17,8 +17,8 @@ export async function POST(request) {
     const id = crypto.randomUUID();
     
     const stmt = db.prepare(`
-      INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow)
-      VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow)
+      INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape)
+      VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape)
     `);
     
     stmt.run({
@@ -29,7 +29,9 @@ export async function POST(request) {
       target_type: data.target_type,
       label: data.label || '',
       type: data.type || 'default',
-      arrow: data.arrow || 'none'
+      arrow: data.arrow || 'none',
+      speed: data.speed || 'normal',
+      shape: data.shape || 'curved'
     });
 
     const newLink = db.prepare('SELECT * FROM links WHERE id = ?').get(id);
@@ -43,7 +45,7 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     const data = await request.json();
-    const { id, label, type, arrow } = data;
+    const { id, label, type, arrow, speed, shape } = data;
     
     const existing = db.prepare('SELECT * FROM links WHERE id = ?').get(id);
     if (!existing) {
@@ -53,14 +55,16 @@ export async function PUT(request) {
     const nextLabel = label !== undefined ? label : existing.label;
     const nextType = type !== undefined ? type : existing.type;
     const nextArrow = arrow !== undefined ? arrow : existing.arrow;
+    const nextSpeed = speed !== undefined ? speed : existing.speed;
+    const nextShape = shape !== undefined ? shape : existing.shape;
 
     const stmt = db.prepare(`
       UPDATE links
-      SET label = @label, type = @type, arrow = @arrow
+      SET label = @label, type = @type, arrow = @arrow, speed = @speed, shape = @shape
       WHERE id = @id
     `);
     
-    stmt.run({ id, label: nextLabel, type: nextType, arrow: nextArrow });
+    stmt.run({ id, label: nextLabel, type: nextType, arrow: nextArrow, speed: nextSpeed, shape: nextShape });
     
     const updatedLink = db.prepare('SELECT * FROM links WHERE id = ?').get(id);
     return NextResponse.json(updatedLink);

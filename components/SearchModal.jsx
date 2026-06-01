@@ -4,6 +4,8 @@ import { Search, Loader2, Sparkles, Terminal, FileText, LayoutGrid, Eye, HelpCir
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function SearchModal({
+  isOpen: controlledIsOpen,
+  onClose: controlledOnClose,
   onAddBook,
   onAddNote,
   onTidyCanvas,
@@ -14,7 +16,12 @@ export default function SearchModal({
   onZoomIn,
   onZoomOut,
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [localIsOpen, setLocalIsOpen] = useState(false);
+  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : localIsOpen;
+  const setIsOpen = (val) => {
+    if (controlledOnClose && !val) controlledOnClose();
+    setLocalIsOpen(val);
+  };
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);

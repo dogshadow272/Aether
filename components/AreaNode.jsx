@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { Eye } from "lucide-react";
+import { Eye, LayoutGrid } from "lucide-react";
 
 const getColorClass = (rgba) => {
   if (!rgba) return "theme-glow-blue";
@@ -20,7 +20,7 @@ const getColorHex = (rgba) => {
   return "#00aaff";
 };
 
-export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, booksCount = 0, completedCount = 0, isFocused, onToggleFocus }) {
+export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArrangeNodes, booksCount = 0, completedCount = 0, isFocused, onToggleFocus, isHighlighted }) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(area.name);
   const inputRef = useRef(null);
@@ -62,7 +62,9 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
 
   return (
     <div
-      className={`absolute border rounded-lg flex flex-col pointer-events-auto ${getColorClass(area.color)}`}
+      className={`absolute border rounded-lg flex flex-col pointer-events-auto ${getColorClass(area.color)} ${
+        isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+      }`}
       style={{
         left: area.x_pos,
         top: area.y_pos,
@@ -78,10 +80,14 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
         transition: "border-color 0.2s, box-shadow 0.2s, background-color 0.2s",
       }}
     >
-      {/* Header (Drag area) */}
       <div
         className="px-3 py-1.5 border-b border-white/5 bg-black/30 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-lg select-none"
         onPointerDown={handlePointerDownDrag}
+        onDoubleClick={(e) => {
+          if (e.target.closest("input") || e.target.closest(".hud-text")) return;
+          e.stopPropagation();
+          if (onToggleFocus) onToggleFocus(true);
+        }}
       >
         <div className="flex items-center gap-2 max-w-[80%]">
           {isEditing ? (
@@ -135,6 +141,19 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {onArrangeNodes && booksCount > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onArrangeNodes(area.id);
+              }}
+              className="text-white/40 hover:text-[#00aaff] transition-colors p-1 flex items-center justify-center cursor-pointer"
+              title="Organize area modules in a grid"
+            >
+              <LayoutGrid size={11} />
+            </button>
+          )}
           {onToggleFocus && (
             <button
               type="button"

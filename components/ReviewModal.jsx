@@ -32,7 +32,9 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
   }, [book]);
 
   // Auto-save after 2 seconds of inactivity
-  const stableOnSave = useCallback(onSave, []);
+  const stableOnSave = useCallback((updatedBook) => {
+    onSave(updatedBook);
+  }, [onSave]);
   useEffect(() => {
     const timer = setTimeout(() => {
       if (review !== book?.review || rating !== book?.rating || status !== book?.status) {

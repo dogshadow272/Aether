@@ -296,6 +296,35 @@ body {
     linear-gradient(to bottom, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
 }
 
+/* Custom Knowledge Graph Mind-Map Connection Marching Animation */
+@keyframes link-flow-marching {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.link-path-dashed {
+  animation: link-flow-marching 1.5s linear infinite !important;
+}
+.link-path-dotted {
+  animation: link-flow-marching 2.5s linear infinite !important;
+}
+.link-path-solid:hover {
+  stroke-dasharray: 6, 4 !important;
+  animation: link-flow-marching 1s linear infinite !important;
+}
+
+/* Dynamic animation speeds override classes */
+.link-speed-fast {
+  animation-duration: 0.6s !important;
+}
+.link-speed-slow {
+  animation-duration: 5s !important;
+}
+.link-speed-pause {
+  animation: none !important;
+  stroke-dashoffset: 0 !important;
+}
+
 
 
 
