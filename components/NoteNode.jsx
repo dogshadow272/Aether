@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
-import { Bold, Italic, Underline, List, ListOrdered, Link, Eye } from "lucide-react";
 import { handleContentEditableKeyDown } from "../lib/editorHelpers";
 
 const renderMarkdown = (text) => {
@@ -77,7 +76,7 @@ const renderMarkdown = (text) => {
 
 // Render note content: check if it's HTML, otherwise parse as Markdown for backwards compatibility
 const renderNoteContent = (content) => {
-  if (!content) return "";
+  if (!content || content === "DOUBLE-CLICK TO EDIT NOTE") return "";
   const isHTML = /<[a-z][\s\S]*>/i.test(content);
   if (isHTML) {
     return content;
@@ -92,6 +91,12 @@ const getColorClass = (rgba) => {
   if (rgba.includes("239, 68, 68") || rgba.includes("ef4444")) return "theme-glow-red";
   if (rgba.includes("249, 115, 22") || rgba.includes("eab308") || rgba.includes("234, 179, 8")) return "theme-glow-yellow";
   return "theme-glow-blue";
+};
+
+const getCoolId = (id) => {
+  if (!id) return "CARD-XXXX";
+  const hex = id.split("-")[0].toUpperCase();
+  return `CARD-${hex}`;
 };
 
 function NoteNode({
@@ -109,13 +114,23 @@ function NoteNode({
   initiallyEditing,
   onEditingStarted,
   onTabOut,
-  onArrowNavigation
+  onArrowNavigation,
+  onTabArrowNavigation
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(note.content);
   const [prevNoteContent, setPrevNoteContent] = useState(note.content);
   const editorRef = useRef(null);
   const cardRef = useRef(null);
+  const isTabPressedRef = useRef(false);
+  const tabArrowTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      isTabPressedRef.current = false;
+      tabArrowTriggeredRef.current = false;
+    }
+  }, [isEditing]);
 
   if (note.content !== prevNoteContent) {
     setPrevNoteContent(note.content);
@@ -139,7 +154,8 @@ function NoteNode({
   // Set innerHTML once when active editing starts to prevent cursor jumping
   useEffect(() => {
     if (isEditing && editorRef.current) {
-      editorRef.current.innerHTML = note.content || "";
+      const currentVal = note.content || "";
+      editorRef.current.innerHTML = currentVal === "DOUBLE-CLICK TO EDIT NOTE" ? "" : currentVal;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing]);
@@ -173,13 +189,16 @@ function NoteNode({
     if (initiallyEditing) {
       const timer = setTimeout(() => {
         setIsEditing(true);
+        if (content === "DOUBLE-CLICK TO EDIT NOTE") {
+          setContent("");
+        }
         if (onEditingStarted) {
           onEditingStarted(note.id);
         }
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [initiallyEditing, note.id, onEditingStarted]);
+  }, [initiallyEditing, note.id, onEditingStarted, content]);
 
   // Focus the editor when it is opened
   useEffect(() => {
@@ -201,6 +220,7 @@ function NoteNode({
   }, [isEditing]);
 
   const handlePointerDownDrag = (e) => {
+    if (e.button === 2) return;
     if (e.shiftKey) return;
     if (isPinned) return;
     if (e.target.closest("button") || e.target.closest("[contenteditable]")) return;
@@ -210,6 +230,9 @@ function NoteNode({
 
   const handleDoubleClick = () => {
     setIsEditing(true);
+    if (content === "DOUBLE-CLICK TO EDIT NOTE") {
+      setContent("");
+    }
   };
 
 
@@ -236,12 +259,25 @@ function NoteNode({
       return;
     }
 
+    if (isTabPressedRef.current) {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        tabArrowTriggeredRef.current = true;
+        isTabPressedRef.current = false;
+        handleEditSubmit();
+        if (onTabArrowNavigation) {
+          onTabArrowNavigation(note.id, e.key);
+        }
+        return;
+      } else {
+        isTabPressedRef.current = false;
+      }
+    }
+
     if (e.key === "Tab") {
       e.preventDefault();
-      handleEditSubmit();
-      if (onTabOut) {
-        onTabOut(note.id);
-      }
+      isTabPressedRef.current = true;
+      tabArrowTriggeredRef.current = false;
       return;
     }
 
@@ -260,15 +296,30 @@ function NoteNode({
     if (handled) return;
   };
 
+  const handleKeyUp = (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const wasPressed = isTabPressedRef.current;
+      isTabPressedRef.current = false;
+      if (wasPressed && !tabArrowTriggeredRef.current) {
+        handleEditSubmit();
+        if (onTabOut) {
+          onTabOut(note.id);
+        }
+      }
+      tabArrowTriggeredRef.current = false;
+    }
+  };
+
   return (
     <div
       ref={cardRef}
       data-node-id={note.id}
       data-node-type="note"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto aero-panel group transition-shadow duration-300 ${getColorClass(note.color)} ${
-        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-selected" : ""
       } ${
-        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-selected" : ""
       }`}
       style={{
         left: note.x_pos,
@@ -278,7 +329,7 @@ function NoteNode({
         minWidth: 120,
         minHeight: 80,
         backgroundColor: note.color || "rgba(255, 255, 255, 0.08)",
-        zIndex: 10,
+        zIndex: isSelected || isHighlighted ? 150 : 50 + (note.z_index || 0),
         transition: "border-color 0.2s, box-shadow 0.2s",
       }}
       onPointerDown={(e) => {
@@ -342,176 +393,13 @@ function NoteNode({
       >
         <div className="hud-text text-white font-semibold flex items-center gap-2">
           {isPinned && <span className="text-[9px]" title="Position Locked">📌</span>}
-          <span>INDEX_CARD // NOTE</span>
-          
-          {/* Color palette selector */}
-          <div className="flex gap-1 items-center bg-black/40 px-1.5 py-0.5 rounded border border-white/5 ml-1">
-            {[
-              { val: "rgba(0, 170, 255, 0.08)", hex: "#00aaff", label: "Blue" },
-              { val: "rgba(168, 85, 247, 0.08)", hex: "#a855f7", label: "Purple" },
-              { val: "rgba(34, 197, 94, 0.08)", hex: "#22c55e", label: "Green" },
-              { val: "rgba(239, 68, 68, 0.08)", hex: "#ef4444", label: "Red" },
-              { val: "rgba(234, 179, 8, 0.08)", hex: "#eab308", label: "Yellow" }
-            ].map((theme) => (
-              <button
-                key={theme.val}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(note.id, { color: theme.val });
-                }}
-                className={`w-2 h-2 rounded-full border transition-transform hover:scale-125 ${
-                  (note.color || "rgba(255, 255, 255, 0.08)") === theme.val ? "border-white scale-110" : "border-white/20"
-                }`}
-                style={{ backgroundColor: theme.hex }}
-                title={theme.label}
-              />
-            ))}
-          </div>
+          <span>{getCoolId(note.id)}</span>
         </div>
-        <div className="flex items-center gap-2">
-          {isEditing && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEditSubmit();
-              }}
-              className="text-[#00aaff] hover:text-white transition-colors text-[9px] font-mono font-bold leading-none p-1 border border-[#00aaff]/30 rounded bg-[#00aaff]/10 px-1.5"
-              title="Save & Close"
-            >
-              DONE
-            </button>
-          )}
-          {onStartConnection && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onStartConnection(note.id, "note");
-              }}
-              className="text-white/40 hover:text-[#00aaff] transition-colors p-1 flex items-center justify-center"
-              title="Connect node"
-            >
-              <Link size={12} />
-            </button>
-          )}
-          {onToggleFocus && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFocus(note.id, "note", false);
-              }}
-              className={`transition-colors p-1 flex items-center justify-center ${
-                isFocused ? "text-purple-400 drop-shadow-[0_0_6px_rgba(168,85,247,0.7)] scale-110" : "text-white/40 hover:text-purple-400"
-              }`}
-              title={isFocused ? "Exit Focus Mode" : "Focus on this node & connections"}
-            >
-              <Eye size={12} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(note.id);
-            }}
-            className="text-white/40 hover:text-white transition-colors text-xs leading-none p-1"
-          >
-            ✕
-          </button>
-        </div>
+        {/* Subtle editing indicator */}
+        {isEditing && (
+          <span className="text-[8px] font-mono text-[#00aaff]/60 tracking-widest animate-pulse select-none">EDITING</span>
+        )}
       </div>
-
-      {/* Mini Inline formatting toolbar when editing */}
-      {isEditing && (
-        <div className="flex items-center gap-1.5 px-3 py-1 border-b border-white/5 bg-black/20 select-none">
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => {
-              document.execCommand("bold", false, null);
-              if (editorRef.current) setContent(editorRef.current.innerHTML);
-            }}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-all"
-            title="Bold"
-          >
-            <Bold size={12} />
-          </button>
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => {
-              document.execCommand("italic", false, null);
-              if (editorRef.current) setContent(editorRef.current.innerHTML);
-            }}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-all"
-            title="Italic"
-          >
-            <Italic size={12} />
-          </button>
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => {
-              document.execCommand("underline", false, null);
-              if (editorRef.current) setContent(editorRef.current.innerHTML);
-            }}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-all"
-            title="Underline"
-          >
-            <Underline size={12} />
-          </button>
-          
-          <div className="w-px h-3.5 bg-white/10 mx-1" />
-  
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => {
-              document.execCommand("insertUnorderedList", false, null);
-              if (editorRef.current) setContent(editorRef.current.innerHTML);
-            }}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-all"
-            title="Bullet List"
-          >
-            <List size={12} />
-          </button>
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => {
-              document.execCommand("insertOrderedList", false, null);
-              if (editorRef.current) setContent(editorRef.current.innerHTML);
-            }}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-all"
-            title="Numbered List"
-          >
-            <ListOrdered size={12} />
-          </button>
-
-          <div className="w-px h-3.5 bg-white/10 mx-1" />
-
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => {
-              const newWrap = note.wrap_text === 0 ? 1 : 0;
-              onEdit(note.id, { wrap_text: newWrap });
-            }}
-            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold leading-normal transition-all border ${
-              note.wrap_text !== 0
-                ? "bg-[#00aaff]/15 border-[#00aaff]/30 text-[#00aaff]"
-                : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
-            }`}
-            title="Toggle Text Wrap"
-          >
-            {note.wrap_text !== 0 ? "WRAP ON" : "WRAP OFF"}
-          </button>
-        </div>
-      )}
-
       {/* Note Content */}
       <div className="flex-1 p-3 flex flex-col min-h-0">
         {isEditing ? (
@@ -526,12 +414,14 @@ function NoteNode({
               wordBreak: note.wrap_text === 0 ? "normal" : "break-word",
               overflowX: note.wrap_text === 0 ? "auto" : "hidden",
               overflowY: "auto",
+              textAlign: "center",
             }}
             placeholder="Type note content... Use Cmd+B/I/U to format, or trigger '# ' (H1) and '- ' (list)."
             onInput={(e) => {
               setContent(e.currentTarget.innerHTML);
             }}
             onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
             onClick={handleEditorClick}
           />
         ) : (
@@ -543,9 +433,12 @@ function NoteNode({
               wordBreak: note.wrap_text === 0 ? "normal" : "break-word",
               overflowX: note.wrap_text === 0 ? "auto" : "hidden",
               overflowY: "auto",
+              textAlign: "center",
             }}
             title="Double-click to edit note"
-            dangerouslySetInnerHTML={{ __html: renderNoteContent(note.content) }}
+            dangerouslySetInnerHTML={{
+              __html: renderNoteContent(note.content) || '<span class="opacity-40 italic block w-full text-center">DOUBLE-CLICK TO EDIT NOTE</span>'
+            }}
           />
         )}
       </div>

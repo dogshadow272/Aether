@@ -9,7 +9,6 @@ export default function SearchModal({
   onClose: controlledOnClose,
   onAddBook,
   onAddNote,
-  onTidyCanvas,
   onToggleTimeline,
   onToggleConnections,
   onResetViewport,
@@ -57,14 +56,6 @@ export default function SearchModal({
       icon: <LayoutGrid size={16} className="text-[#22c55e]" />,
       action: () => onEnterDrawMode(),
       hotkey: "DRAG",
-    },
-    {
-      id: "cmd-tidy-canvas",
-      title: "TIDY WORKSPACE LAYOUT",
-      subtitle: "ALIGN BOOKS CHRONOLOGICALLY & SATELLITES IN ARCS",
-      icon: <Sparkles size={16} className="text-[#a855f7]" />,
-      action: () => onTidyCanvas(),
-      hotkey: "ALIGN",
     },
     {
       id: "cmd-reset-viewport",

@@ -26,6 +26,7 @@ function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArra
   const inputRef = useRef(null);
 
   const handlePointerDownDrag = (e) => {
+    if (e.button === 2) return;
     if (e.shiftKey) return;
     if (isPinned) return;
     if (e.target.closest("button") || e.target.closest("input")) return;
@@ -67,9 +68,9 @@ function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArra
       data-node-id={area.id}
       data-node-type="area"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto ${getColorClass(area.color)} ${
-        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-selected" : ""
       } ${
-        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-selected" : ""
       }`}
       style={{
         left: area.x_pos,
@@ -82,7 +83,7 @@ function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArra
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",
         touchAction: "none",
-        zIndex: 1,
+        zIndex: isSelected || isHighlighted ? 19 : Math.min(18, 10 + (area.z_index || 0)),
         transition: "border-color 0.2s, box-shadow 0.2s, background-color 0.2s",
       }}
     >

@@ -15,9 +15,11 @@ function ImageNode({
   isHighlighted,
   isSelected,
   isPinned,
-  onRename
+  onRename,
+  isDragging
 }) {
   const handlePointerDownDrag = (e) => {
+    if (e.button === 2) return;
     if (e.shiftKey) return;
     if (isPinned) return;
     if (e.target.closest("button") || e.target.closest("input")) return;
@@ -40,14 +42,38 @@ function ImageNode({
     }
   };
 
+  if (isDragging) {
+    return (
+      <div
+        data-node-id={image.id}
+        data-node-type="image"
+        className="absolute border border-dashed border-[#00e1ff]/70 bg-[#00e1ff]/5 rounded-lg flex flex-col items-center justify-center pointer-events-none select-none"
+        style={{
+          left: image.x_pos,
+          top: image.y_pos,
+          width: image.width || 300,
+          height: image.height || 300,
+          touchAction: "none",
+          zIndex: 1000,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
+        }}
+      >
+        <div className="flex flex-col items-center gap-2 text-[#00e1ff] font-mono text-[10px] uppercase tracking-wider font-bold">
+          <span>🖼️ DRAG ACTIVE</span>
+          <span className="text-white/60 text-[9px] lowercase font-normal">{image.name}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-node-id={image.id}
       data-node-type="image"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto bg-[#050505e0] border-white/10 backdrop-blur-xl group transition-all duration-300 ${
-        isHighlighted ? "ring-2 ring-[#00aaff] border-[#00aaff]! z-40" : ""
+        isHighlighted ? "ring-2 ring-[#00aaff] border-[#00aaff]! z-selected" : ""
       } ${
-        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-selected" : ""
       }`}
       style={{
         left: image.x_pos,
@@ -57,7 +83,7 @@ function ImageNode({
         minWidth: 150,
         minHeight: 150,
         touchAction: "none",
-        zIndex: 5,
+        zIndex: isSelected || isHighlighted ? 150 : 40 + (image.z_index || 0),
         boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
       }}
     >

@@ -3,6 +3,7 @@ import { memo } from "react";
 
 function QuoteNode({ quote, onDragStart, onDelete, isSelected, isPinned }) {
   const handlePointerDown = (e) => {
+    if (e.button === 2) return;
     if (e.shiftKey) return;
     if (isPinned) return;
     e.stopPropagation();
@@ -21,13 +22,13 @@ function QuoteNode({ quote, onDragStart, onDelete, isSelected, isPinned }) {
       className={`absolute max-w-xs aero-panel p-3 text-white text-sm italic font-sans border-l-2 border-l-[#00aaff] ${
         isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
       } ${
-        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-selected" : ""
       }`}
       style={{ 
         left: quote.x_pos, 
         top: quote.y_pos,
         touchAction: "none",
-        zIndex: 10,
+        zIndex: isSelected ? 150 : 30 + (quote.z_index || 0),
       }}
       onPointerDown={handlePointerDown}
     >

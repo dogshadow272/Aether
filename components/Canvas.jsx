@@ -8,7 +8,6 @@ import AreaNode from "./AreaNode";
 import NoteNode from "./NoteNode";
 import PdfNode from "./PdfNode";
 import ImageNode from "./ImageNode";
-import TelemetryDashboard from "./TelemetryDashboard";
 
 const getHexWithOpacity = (hex, opacity = 1) => {
   if (!hex) return `rgba(0, 170, 255, ${opacity})`;
@@ -286,9 +285,10 @@ export default function Canvas() {
   const [focusNode, setFocusNode] = useState(null); // { id: string, type: 'book' | 'note' | 'quote' }
   const [selectedNodes, setSelectedNodes] = useState([]); // Array of { id, type }
   const [tempLassoBox, setTempLassoBox] = useState(null); // { x, y, w, h }
-  const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
+
   const [pdfs, setPdfs] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [draggedNode, setDraggedNode] = useState(null);
   const [newlyCreatedNoteId, setNewlyCreatedNoteId] = useState(null);
   
   const panRef = useRef(pan);
@@ -497,16 +497,9 @@ export default function Canvas() {
 
 
   const handleToggleFocus = useCallback((id, type, shouldZoom = false) => {
-    setFocusNode((prev) => {
-      const isAlreadyFocused = prev && prev.id === id && prev.type === type;
-      if (isAlreadyFocused) {
-        return null;
-      }
-      if (shouldZoom) {
-        setTimeout(() => centerOnNode(id, type), 50);
-      }
-      return { id, type };
-    });
+    if (shouldZoom) {
+      setTimeout(() => centerOnNode(id, type), 50);
+    }
   }, [centerOnNode]);
 
   const handleNodeToggleFocus = useCallback((id, type, zoom) => {
@@ -517,7 +510,6 @@ export default function Canvas() {
     if (zoom) {
       centerOnNode(id, type);
     }
-    setFocusNode({ id, type });
   }, [centerOnNode]);
 
   const pdfLinkedNotesMap = useMemo(() => {
@@ -2262,86 +2254,6 @@ export default function Canvas() {
     }
   };
 
-  const handleArrangeTimeline = async () => {
-    if (books.length === 0) return;
-
-    // 1. Sort books chronologically by created_at (ascending)
-    const sortedBooks = [...books].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    const horizontalSpacing = 420; // safe spacing horizontally to allow satellite quotes space
-    const timelineY = 400; // timeline horizontal baseline
-
-    setIsFocusing(true);
-
-    try {
-      // Align books along baseline
-      for (let i = 0; i < sortedBooks.length; i++) {
-        const book = sortedBooks[i];
-        const targetX = 100 + i * horizontalSpacing;
-        const targetY = timelineY;
-
-        // Snap to grid
-        const snappedX = Math.round(targetX / 20) * 20;
-        const snappedY = Math.round(targetY / 20) * 20;
-
-        const nextBook = { ...book, x_pos: snappedX, y_pos: snappedY };
-        await handleUpdateBook(nextBook);
-
-        // Position quotes in orbit around this book node
-        const bookQuotes = quotes.filter(q => q.book_id === book.id);
-        for (let qIdx = 0; qIdx < bookQuotes.length; qIdx++) {
-          const quote = bookQuotes[qIdx];
-          
-          // Constellation coordinates relative to book card
-          let qX = snappedX;
-          let qY = snappedY;
-
-          // Distribute in nice directions (alternating)
-          if (qIdx === 0) {
-            // Above
-            qX = snappedX + 96 - 40;
-            qY = snappedY - 140;
-          } else if (qIdx === 1) {
-            // Below
-            qX = snappedX + 96 - 40;
-            qY = snappedY + (book.cover_url ? 320 : 160) + 80;
-          } else if (qIdx === 2) {
-            // Left
-            qX = snappedX - 160;
-            qY = snappedY + 100;
-          } else if (qIdx === 3) {
-            // Right
-            qX = snappedX + 192 + 80;
-            qY = snappedY + 100;
-          } else {
-            // Diagonal orbits for additional quotes
-            const angle = (qIdx * 45 * Math.PI) / 180;
-            qX = snappedX + 96 - 40 + Math.cos(angle) * 260;
-            qY = snappedY + 100 + Math.sin(angle) * 260;
-          }
-
-          // Snap quote to grid
-          const snappedQuoteX = Math.round(qX / 20) * 20;
-          const snappedQuoteY = Math.round(qY / 20) * 20;
-
-          // Call API to save quote coordinates
-          await fetch("/api/quotes", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: quote.id, x_pos: snappedQuoteX, y_pos: snappedQuoteY })
-          });
-
-          // Sync local state
-          setQuotes(prev => prev.map(item => item.id === quote.id ? { ...item, x_pos: snappedQuoteX, y_pos: snappedQuoteY } : item));
-        }
-      }
-    } catch (err) {
-      console.error("Failed to auto-arrange timeline coordinates:", err);
-    } finally {
-      setTimeout(() => setIsFocusing(false), 450);
-    }
-  };
-
   const handleDeleteArea = (areaId) => {
     setActiveDialog({ type: "confirm-delete-area", areaId });
   };
@@ -2468,6 +2380,91 @@ export default function Canvas() {
     }
   }, [createLink, handleCreateNote, saveStateBeforeMutation]);
 
+  const handleNoteTabArrowNavigation = useCallback(async (sourceNoteId, direction) => {
+    const sourceNote = notesRef.current.find(n => n.id === sourceNoteId);
+    if (!sourceNote) return;
+
+    const noteWidth = 220;
+    const noteHeight = 150;
+    let newX = sourceNote.x_pos;
+    let newY = sourceNote.y_pos;
+
+    // Helper to check for bounding box collisions at canvas coordinates
+    const getCollisionAt = (x, y, w, h) => {
+      const bookCollision = booksRef.current.some(b => {
+        const bw = 192;
+        const bh = b.cover_url ? 320 : 160;
+        return x < b.x_pos + bw && x + w > b.x_pos && y < b.y_pos + bh && y + h > b.y_pos;
+      });
+      if (bookCollision) return true;
+
+      const noteCollision = notesRef.current.some(n => {
+        const nw = n.width || 220;
+        const nh = n.height || 150;
+        return x < n.x_pos + nw && x + w > n.x_pos && y < n.y_pos + nh && y + h > n.y_pos;
+      });
+      if (noteCollision) return true;
+
+      const pdfCollision = pdfsRef.current.some(p => {
+        const pw = p.width || 450;
+        const ph = p.height || 600;
+        return x < p.x_pos + pw && x + w > p.x_pos && y < p.y_pos + ph && y + h > p.y_pos;
+      });
+      if (pdfCollision) return true;
+
+      const imageCollision = imagesRef.current.some(img => {
+        const iw = img.width || 300;
+        const ih = img.height || 300;
+        return x < img.x_pos + iw && x + w > img.x_pos && y < img.y_pos + ih && y + h > img.y_pos;
+      });
+      if (imageCollision) return true;
+
+      const quoteCollision = quotesRef.current.some(q => {
+        const qw = 140;
+        const qh = 80;
+        return x < q.x_pos + qw && x + w > q.x_pos && y < q.y_pos + qh && y + h > q.y_pos;
+      });
+      if (quoteCollision) return true;
+
+      return false;
+    };
+
+    let dx = 0;
+    let dy = 0;
+
+    if (direction === "ArrowRight") {
+      newX = sourceNote.x_pos + (sourceNote.width || noteWidth) + 80;
+      dx = noteWidth + 80;
+    } else if (direction === "ArrowLeft") {
+      newX = sourceNote.x_pos - noteWidth - 80;
+      dx = -(noteWidth + 80);
+    } else if (direction === "ArrowDown") {
+      newY = sourceNote.y_pos + (sourceNote.height || noteHeight) + 80;
+      dy = noteHeight + 80;
+    } else if (direction === "ArrowUp") {
+      newY = sourceNote.y_pos - noteHeight - 80;
+      dy = -(noteHeight + 80);
+    }
+
+    // Shift new placement if there's an overlap, moving in the specified direction
+    while (getCollisionAt(newX, newY, noteWidth, noteHeight)) {
+      if (direction === "ArrowRight" || direction === "ArrowLeft") {
+        newX += dx;
+      } else {
+        newY += dy;
+      }
+    }
+
+    // Save history once
+    saveStateBeforeMutation();
+
+    const newNote = await handleCreateNote(newX, newY, "", true); // skipHistory = true
+    if (newNote) {
+      await createLink({ id: sourceNoteId, type: "note" }, { id: newNote.id, type: "note" }, true); // skipHistory = true
+      setNewlyCreatedNoteId(newNote.id);
+    }
+  }, [createLink, handleCreateNote, saveStateBeforeMutation]);
+
   const handleNoteArrowNavigation = useCallback((sourceNoteId, direction) => {
     const sourceNote = notesRef.current.find(n => n.id === sourceNoteId);
     if (!sourceNote) return;
@@ -2545,7 +2542,6 @@ export default function Canvas() {
         setNewlyCreatedNoteId(bestCandidate.id);
       } else {
         centerOnNode(bestCandidate.id, bestCandidate.type);
-        setFocusNode({ id: bestCandidate.id, type: bestCandidate.type });
       }
     }
   }, [centerOnNode]);
@@ -2849,767 +2845,6 @@ export default function Canvas() {
     }
   };
 
-  // Tidy Layout: auto-arrange canvas nodes in space
-  const handleTidyCanvas = async () => {
-    // 1. Identify which items are inside which category zone (Area)
-    const areaContentMap = {}; // areaId -> { books: [], quotes: [], notes: [], pdfs: [] }
-    const containedBookIds = new Set();
-    const containedQuoteIds = new Set();
-    const containedNoteIds = new Set();
-    const containedPdfIds = new Set();
-
-    areas.forEach((area) => {
-      const ax1 = area.x_pos;
-      const ay1 = area.y_pos;
-      const ax2 = area.x_pos + (area.width || 200);
-      const ay2 = area.y_pos + (area.height || 200);
-
-      const areaBooks = books.filter((b) => b.x_pos >= ax1 && b.x_pos <= ax2 && b.y_pos >= ay1 && b.y_pos <= ay2);
-      const areaQuotes = quotes.filter((q) => q.x_pos >= ax1 && q.x_pos <= ax2 && q.y_pos >= ay1 && q.y_pos <= ay2);
-      const areaNotes = notes.filter((n) => n.x_pos >= ax1 && n.x_pos <= ax2 && n.y_pos >= ay1 && n.y_pos <= ay2);
-      const areaPdfs = pdfs.filter((p) => p.x_pos >= ax1 && p.x_pos <= ax2 && p.y_pos >= ay1 && p.y_pos <= ay2);
-
-      areaContentMap[area.id] = { books: areaBooks, quotes: areaQuotes, notes: areaNotes, pdfs: areaPdfs };
-      
-      areaBooks.forEach(b => containedBookIds.add(b.id));
-      areaQuotes.forEach(q => containedQuoteIds.add(q.id));
-      areaNotes.forEach(n => containedNoteIds.add(n.id));
-      areaPdfs.forEach(p => containedPdfIds.add(p.id));
-    });
-
-    const updatedBooks = [];
-    const updatedQuotes = [];
-    const updatedNotes = [];
-    const updatedPdfs = [];
-    const updatedAreas = [];
-
-    // 2. Tidy items inside their respective category zones
-    areas.forEach((area) => {
-      const content = areaContentMap[area.id];
-      const itemsToTidy = [
-        ...content.books.map(b => ({ ...b, type: "book" })),
-        ...content.pdfs.map(p => ({ ...p, type: "pdf" })),
-        ...content.notes.map(n => ({ ...n, type: "note" })),
-        ...content.quotes.map(q => ({ ...q, type: "quote" }))
-      ];
-
-      if (itemsToTidy.length > 0) {
-        let currX = area.x_pos + 20;
-        let currY = area.y_pos + 50;
-        let maxRowHeight = 0;
-        const areaWidth = area.width || 200;
-
-        itemsToTidy.forEach((item) => {
-          let w = 200;
-          let h = 150;
-
-          if (item.type === "book") {
-            w = 192;
-            h = 300;
-          } else if (item.type === "pdf") {
-            w = item.width || 450;
-            h = item.height || 600;
-          } else if (item.type === "note") {
-            w = item.width || 220;
-            h = item.height || 150;
-          } else if (item.type === "quote") {
-            w = 200;
-            h = 100;
-          }
-
-          // Check for row wrapping
-          if (currX + w > area.x_pos + areaWidth - 20 && currX > area.x_pos + 20) {
-            currX = area.x_pos + 20;
-            currY += maxRowHeight + 20;
-            maxRowHeight = 0;
-          }
-
-          const tidiedItem = {
-            ...item,
-            x_pos: currX,
-            y_pos: currY
-          };
-
-          if (item.type === "book") {
-            updatedBooks.push(tidiedItem);
-          } else if (item.type === "pdf") {
-            updatedPdfs.push(tidiedItem);
-          } else if (item.type === "note") {
-            updatedNotes.push(tidiedItem);
-          } else if (item.type === "quote") {
-            updatedQuotes.push(tidiedItem);
-          }
-
-          currX += w + 20;
-          maxRowHeight = Math.max(maxRowHeight, h);
-        });
-
-        // Auto-expand area height if content overflows
-        const neededHeight = (currY + maxRowHeight + 20) - area.y_pos;
-        if (neededHeight > (area.height || 200)) {
-          updatedAreas.push({ ...area, height: neededHeight });
-        } else {
-          updatedAreas.push(area);
-        }
-      } else {
-        updatedAreas.push(area);
-      }
-    });
-
-    // 3. Tidy remaining "free" items (those not inside any zone)
-    const freeBooks = books.filter(b => !containedBookIds.has(b.id));
-    const freeQuotes = quotes.filter(q => !containedQuoteIds.has(q.id));
-    const freeNotes = notes.filter(n => !containedNoteIds.has(n.id));
-    const freePdfs = pdfs.filter(p => !containedPdfIds.has(p.id));
-
-    // A. Tidy free books
-    let startBookX = 100;
-    let startBookY = 150;
-    const bookSpacing = 320;
-    const tidiedFreeBooks = freeBooks.map((book, index) => ({
-      ...book,
-      x_pos: startBookX + index * bookSpacing,
-      y_pos: startBookY + (index % 2 === 0 ? 0 : 30),
-    }));
-    updatedBooks.push(...tidiedFreeBooks);
-
-    // B. Tidy free quotes near their parent books (wherever the parent book is, free or zoned)
-    const allTidiedBooks = [...updatedBooks];
-    freeQuotes.forEach((quote) => {
-      const parentBook = allTidiedBooks.find((b) => b.id === quote.book_id) || books.find((b) => b.id === quote.book_id);
-      if (parentBook) {
-        const bookQuotesTidiedCount = updatedQuotes.filter(q => q.book_id === parentBook.id).length;
-        updatedQuotes.push({
-          ...quote,
-          x_pos: parentBook.x_pos + 230 + (bookQuotesTidiedCount % 2) * 50,
-          y_pos: parentBook.y_pos - 60 + bookQuotesTidiedCount * 120,
-        });
-      } else {
-        updatedQuotes.push(quote);
-      }
-    });
-
-    // C. Tidy free notes in a grid
-    let startNoteX = -320;
-    let startNoteY = 100;
-    const noteSpacingX = 260;
-    const noteSpacingY = 220;
-    const tidiedFreeNotes = freeNotes.map((note, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      return {
-        ...note,
-        x_pos: startNoteX + col * noteSpacingX,
-        y_pos: startNoteY + row * noteSpacingY,
-      };
-    });
-    updatedNotes.push(...tidiedFreeNotes);
-
-    // D. Tidy free pdfs in a grid
-    let startPdfX = -850;
-    let startPdfY = 100;
-    const pdfSpacingX = 490;
-    const pdfSpacingY = 670;
-    const tidiedFreePdfs = freePdfs.map((pdf, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      return {
-        ...pdf,
-        x_pos: startPdfX + col * pdfSpacingX,
-        y_pos: startPdfY + row * pdfSpacingY,
-      };
-    });
-    updatedPdfs.push(...tidiedFreePdfs);
-
-    // 4. Update React state
-    setBooks(updatedBooks);
-    setQuotes(updatedQuotes);
-    setNotes(updatedNotes);
-    setPdfs(updatedPdfs);
-    setAreas(updatedAreas);
-
-    // 5. Persist all updates to SQLite in batch
-    try {
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          books: updatedBooks.map(b => ({ id: b.id, x_pos: b.x_pos, y_pos: b.y_pos })),
-          notes: updatedNotes.map(n => ({ id: n.id, x_pos: n.x_pos, y_pos: n.y_pos, width: n.width || 220, height: n.height || 150 })),
-          areas: updatedAreas.map(a => ({ id: a.id, x_pos: a.x_pos, y_pos: a.y_pos, width: a.width || 200, height: a.height || 200 })),
-          quotes: updatedQuotes.map(q => ({ id: q.id, x_pos: q.x_pos, y_pos: q.y_pos })),
-          pdfs: updatedPdfs.map(p => ({ id: p.id, x_pos: p.x_pos, y_pos: p.y_pos, width: p.width || 450, height: p.height || 600 }))
-        })
-      });
-    } catch (err) {
-      console.error("Failed to persist tidy coordinates:", err);
-    }
-  };
-
-  const handleLayoutStatusKanban = async () => {
-    saveStateBeforeMutation();
-    try {
-      const columns = {
-        "To Read": [],
-        "Reading": [],
-        "Completed": []
-      };
-      
-      books.forEach(b => {
-        const s = b.status || "To Read";
-        if (columns[s]) {
-          columns[s].push(b);
-        } else {
-          columns["To Read"].push(b);
-        }
-      });
-
-      const startX = 100;
-      const startY = 150;
-      const colWidth = 420;
-      const colGap = 150;
-      const rowGap = 360;
-      
-      const updatedBooks = [];
-      const updatedNotes = [];
-      const updatedQuotes = [];
-      const updatedPdfs = [];
-
-      const colKeys = ["To Read", "Reading", "Completed"];
-      
-      colKeys.forEach((status, colIndex) => {
-        const colBooks = columns[status];
-        const colX = startX + colIndex * (colWidth + colGap);
-        
-        colBooks.forEach((book, rowIndex) => {
-          const bookX = colX + 40;
-          const bookY = startY + rowIndex * rowGap;
-          
-          updatedBooks.push({ ...book, x_pos: bookX, y_pos: bookY });
-          
-          const relatedQuotes = quotes.filter(q => q.book_id === book.id);
-          relatedQuotes.forEach((q, qi) => {
-            updatedQuotes.push({
-              ...q,
-              x_pos: bookX + 220,
-              y_pos: bookY + qi * 80
-            });
-          });
-
-          const relatedLinks = links.filter(l => 
-            (l.source_id === book.id && l.source_type === "book") || 
-            (l.target_id === book.id && l.target_type === "book")
-          );
-
-          let noteOffsetIndex = 0;
-          relatedLinks.forEach(l => {
-            const partnerId = l.source_id === book.id ? l.target_id : l.source_id;
-            const partnerType = l.source_id === book.id ? l.target_type : l.source_type;
-            
-            if (partnerType === "note") {
-              const note = notes.find(n => n.id === partnerId);
-              if (note) {
-                updatedNotes.push({
-                  ...note,
-                  x_pos: bookX + 220,
-                  y_pos: bookY + 120 + noteOffsetIndex * 170
-                });
-                noteOffsetIndex++;
-              }
-            } else if (partnerType === "pdf") {
-              const pdf = pdfs.find(p => p.id === partnerId);
-              if (pdf) {
-                updatedPdfs.push({
-                  ...pdf,
-                  x_pos: bookX + 220,
-                  y_pos: bookY + 120 + noteOffsetIndex * 170
-                });
-                noteOffsetIndex++;
-              }
-            }
-          });
-        });
-      });
-
-      for (const a of areas) {
-        await fetch(`/api/areas?id=${a.id}`, { method: "DELETE" });
-      }
-
-      const newAreas = [];
-      const zoneTitles = {
-        "To Read": "TO READ MODULES",
-        "Reading": "IN PROGRESS RESEARCH",
-        "Completed": "COMPLETED CITATIONS & REVIEWS"
-      };
-      const zoneColors = {
-        "To Read": "rgba(0, 170, 255, 0.08)",
-        "Reading": "rgba(168, 85, 247, 0.08)",
-        "Completed": "rgba(34, 197, 94, 0.08)"
-      };
-
-      for (let colIndex = 0; colIndex < colKeys.length; colIndex++) {
-        const status = colKeys[colIndex];
-        const booksInCol = columns[status].length;
-        const areaHeight = Math.max(booksInCol * rowGap + 100, 700);
-        const colX = startX + colIndex * (colWidth + colGap);
-
-        const areaRes = await fetch("/api/areas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: zoneTitles[status],
-            x_pos: colX,
-            y_pos: startY - 80,
-            width: colWidth,
-            height: areaHeight,
-            color: zoneColors[status]
-          })
-        });
-        const areaData = await areaRes.json();
-        newAreas.push(areaData);
-      }
-
-      const repositionedBookIds = new Set(updatedBooks.map(b => b.id));
-      const repositionedNoteIds = new Set(updatedNotes.map(n => n.id));
-      const repositionedQuoteIds = new Set(updatedQuotes.map(q => q.id));
-      const repositionedPdfIds = new Set(updatedPdfs.map(p => p.id));
-
-      const orphanNotes = notes.filter(n => !repositionedNoteIds.has(n.id));
-      const orphanPdfs = pdfs.filter(p => !repositionedPdfIds.has(p.id));
-
-      let extraOffset = 0;
-      orphanNotes.forEach((n) => {
-        updatedNotes.push({
-          ...n,
-          x_pos: startX + 3 * (colWidth + colGap) + 40,
-          y_pos: startY + extraOffset
-        });
-        extraOffset += (n.height || 150) + 30;
-      });
-
-      orphanPdfs.forEach((p) => {
-        updatedPdfs.push({
-          ...p,
-          x_pos: startX + 3 * (colWidth + colGap) + 40,
-          y_pos: startY + extraOffset
-        });
-        extraOffset += (p.height || 600) + 30;
-      });
-
-      if (orphanNotes.length > 0 || orphanPdfs.length > 0) {
-        const areaRes = await fetch("/api/areas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "UNASSIGNED MODULES & RESOURCES",
-            x_pos: startX + 3 * (colWidth + colGap),
-            y_pos: startY - 80,
-            width: colWidth + 50,
-            height: Math.max(extraOffset + 100, 700),
-            color: "rgba(234, 179, 8, 0.08)"
-          })
-        });
-        const areaData = await areaRes.json();
-        newAreas.push(areaData);
-      }
-
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          books: updatedBooks,
-          notes: updatedNotes,
-          quotes: updatedQuotes,
-          pdfs: updatedPdfs
-        })
-      });
-
-      setBooks(prev => prev.map(b => updatedBooks.find(ub => ub.id === b.id) || b));
-      setNotes(prev => prev.map(n => updatedNotes.find(un => un.id === n.id) || n));
-      setQuotes(prev => prev.map(q => updatedQuotes.find(uq => uq.id === q.id) || q));
-      setPdfs(prev => prev.map(p => updatedPdfs.find(up => up.id === p.id) || p));
-      setAreas(newAreas);
-      
-      setSelectedNodes([]);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleLayoutRatingSwimlanes = async () => {
-    saveStateBeforeMutation();
-    try {
-      const rows = { 5: [], 4: [], 3: [], 2: [], 1: [], 0: [] };
-      books.forEach(b => {
-        const r = b.rating || 0;
-        if (rows[r]) {
-          rows[r].push(b);
-        } else {
-          rows[0].push(b);
-        }
-      });
-
-      const startX = 100;
-      const startY = 150;
-      const rowHeight = 380;
-      const rowGap = 150;
-      const colSpacing = 300;
-      
-      const updatedBooks = [];
-      const updatedNotes = [];
-      const updatedQuotes = [];
-      const updatedPdfs = [];
-
-      const ratingTiers = [5, 4, 3, 2, 1, 0];
-      const newAreas = [];
-      
-      const tierTitles = {
-        5: "★★★★★ EXCELLENT REVIEWS (5 STARS)",
-        4: "★★★★ HIGHLY RECOMMEND (4 STARS)",
-        3: "★★★ SATISFACTORY READS (3 STARS)",
-        2: "★★ AVERAGE MODULES (2 STARS)",
-        1: "★ POOR QUALITY (1 STAR)",
-        0: "UNRATED / TO BE EVALUATED"
-      };
-      
-      const tierColors = {
-        5: "rgba(234, 179, 8, 0.08)",
-        4: "rgba(34, 197, 94, 0.08)",
-        3: "rgba(0, 170, 255, 0.08)",
-        2: "rgba(168, 85, 247, 0.08)",
-        1: "rgba(239, 68, 68, 0.08)",
-        0: "rgba(255, 255, 255, 0.05)"
-      };
-
-      for (const a of areas) {
-        await fetch(`/api/areas?id=${a.id}`, { method: "DELETE" });
-      }
-
-      let currentY = startY;
-
-      for (let tierIndex = 0; tierIndex < ratingTiers.length; tierIndex++) {
-        const tier = ratingTiers[tierIndex];
-        const tierBooks = rows[tier];
-        if (tierBooks.length === 0) continue;
-
-        const rowY = currentY;
-        let currentX = startX + 50;
-
-        tierBooks.forEach((book) => {
-          const bookX = currentX;
-          const bookY = rowY + 30;
-          
-          updatedBooks.push({ ...book, x_pos: bookX, y_pos: bookY });
-          currentX += 240;
-
-          const relatedQuotes = quotes.filter(q => q.book_id === book.id);
-          relatedQuotes.forEach((q, qi) => {
-            updatedQuotes.push({
-              ...q,
-              x_pos: bookX,
-              y_pos: bookY + 160 + qi * 70
-            });
-          });
-
-          const relatedLinks = links.filter(l => 
-            (l.source_id === book.id && l.source_type === "book") || 
-            (l.target_id === book.id && l.target_type === "book")
-          );
-
-          let noteOffsetIndex = 0;
-          relatedLinks.forEach(l => {
-            const partnerId = l.source_id === book.id ? l.target_id : l.source_id;
-            const partnerType = l.source_id === book.id ? l.target_type : l.source_type;
-            
-            if (partnerType === "note") {
-              const note = notes.find(n => n.id === partnerId);
-              if (note) {
-                updatedNotes.push({
-                  ...note,
-                  x_pos: bookX,
-                  y_pos: bookY + 160 + relatedQuotes.length * 70 + noteOffsetIndex * 170
-                });
-                noteOffsetIndex++;
-              }
-            } else if (partnerType === "pdf") {
-              const pdf = pdfs.find(p => p.id === partnerId);
-              if (pdf) {
-                updatedPdfs.push({
-                  ...pdf,
-                  x_pos: bookX,
-                  y_pos: bookY + 160 + relatedQuotes.length * 70 + noteOffsetIndex * 170
-                });
-                noteOffsetIndex++;
-              }
-            }
-          });
-        });
-
-        const areaRes = await fetch("/api/areas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: tierTitles[tier],
-            x_pos: startX,
-            y_pos: rowY - 20,
-            width: Math.max(currentX - startX + 50, 800),
-            height: rowHeight,
-            color: tierColors[tier]
-          })
-        });
-        const areaData = await areaRes.json();
-        newAreas.push(areaData);
-
-        currentY += rowHeight + rowGap;
-      }
-
-      const repositionedBookIds = new Set(updatedBooks.map(b => b.id));
-      const repositionedNoteIds = new Set(updatedNotes.map(n => n.id));
-      const repositionedQuoteIds = new Set(updatedQuotes.map(q => q.id));
-      const repositionedPdfIds = new Set(updatedPdfs.map(p => p.id));
-
-      const orphanNotes = notes.filter(n => !repositionedNoteIds.has(n.id));
-      const orphanPdfs = pdfs.filter(p => !repositionedPdfIds.has(p.id));
-
-      if (orphanNotes.length > 0 || orphanPdfs.length > 0) {
-        let orphanX = startX + 50;
-        orphanNotes.forEach((n) => {
-          updatedNotes.push({
-            ...n,
-            x_pos: orphanX,
-            y_pos: currentY + 30
-          });
-          orphanX += (n.width || 220) + 30;
-        });
-
-        orphanPdfs.forEach((p) => {
-          updatedPdfs.push({
-            ...p,
-            x_pos: orphanX,
-            y_pos: currentY + 30
-          });
-          orphanX += (p.width || 450) + 30;
-        });
-
-        const areaRes = await fetch("/api/areas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "UNASSIGNED FRAGMENTS & RESEARCH",
-            x_pos: startX,
-            y_pos: currentY - 20,
-            width: Math.max(orphanX - startX + 50, 800),
-            height: rowHeight,
-            color: "rgba(255, 255, 255, 0.05)"
-          })
-        });
-        const areaData = await areaRes.json();
-        newAreas.push(areaData);
-      }
-
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          books: updatedBooks,
-          notes: updatedNotes,
-          quotes: updatedQuotes,
-          pdfs: updatedPdfs
-        })
-      });
-
-      setBooks(prev => prev.map(b => updatedBooks.find(ub => ub.id === b.id) || b));
-      setNotes(prev => prev.map(n => updatedNotes.find(un => un.id === n.id) || n));
-      setQuotes(prev => prev.map(q => updatedQuotes.find(uq => uq.id === q.id) || q));
-      setPdfs(prev => prev.map(p => updatedPdfs.find(up => up.id === p.id) || p));
-      setAreas(newAreas);
-
-      setSelectedNodes([]);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleLayoutTopologyRadial = async () => {
-    saveStateBeforeMutation();
-    try {
-      const allNodes = [
-        ...books.map(b => ({ id: b.id, type: "book", width: 192, height: b.cover_url ? 320 : 160 })),
-        ...notes.map(n => ({ id: n.id, type: "note", width: n.width || 220, height: n.height || 150 })),
-        ...pdfs.map(p => ({ id: p.id, type: "pdf", width: p.width || 450, height: p.height || 600 }))
-      ];
-
-      if (allNodes.length === 0) return;
-
-      const connectionCounts = {};
-      allNodes.forEach(node => { connectionCounts[node.id] = 0; });
-
-      links.forEach(l => {
-        if (connectionCounts[l.source_id] !== undefined) connectionCounts[l.source_id]++;
-        if (connectionCounts[l.target_id] !== undefined) connectionCounts[l.target_id]++;
-      });
-
-      let primaryHubId = allNodes[0].id;
-      let maxConnections = -1;
-      allNodes.forEach(n => {
-        if (connectionCounts[n.id] > maxConnections) {
-          maxConnections = connectionCounts[n.id];
-          primaryHubId = n.id;
-        }
-      });
-
-      const centerX = 1500;
-      const centerY = 1500;
-
-      const updatedBooks = [];
-      const updatedNotes = [];
-      const updatedPdfs = [];
-      const updatedQuotes = [];
-
-      const hubNode = allNodes.find(n => n.id === primaryHubId);
-      const setCoords = (node, x, y) => {
-        if (node.type === "book") {
-          const original = books.find(b => b.id === node.id);
-          updatedBooks.push({ ...original, x_pos: x - 96, y_pos: y - 100 });
-        } else if (node.type === "note") {
-          const original = notes.find(n => n.id === node.id);
-          updatedNotes.push({ ...original, x_pos: x - (original.width || 220) / 2, y_pos: y - (original.height || 150) / 2 });
-        } else if (node.type === "pdf") {
-          const original = pdfs.find(p => p.id === node.id);
-          updatedPdfs.push({ ...original, x_pos: x - (original.width || 450) / 2, y_pos: y - (original.height || 600) / 2 });
-        }
-      };
-
-      setCoords(hubNode, centerX, centerY);
-
-      const directlyConnected = [];
-      const others = [];
-
-      allNodes.forEach(n => {
-        if (n.id === primaryHubId) return;
-
-        const isDirect = links.some(l => 
-          (l.source_id === primaryHubId && l.target_id === n.id) ||
-          (l.target_id === primaryHubId && l.source_id === n.id)
-        );
-
-        if (isDirect) {
-          directlyConnected.push(n);
-        } else {
-          others.push(n);
-        }
-      });
-
-      const innerRadius = 480;
-      directlyConnected.forEach((node, index) => {
-        const angle = (index / directlyConnected.length) * 2 * Math.PI;
-        const x = centerX + innerRadius * Math.cos(angle);
-        const y = centerY + innerRadius * Math.sin(angle);
-        setCoords(node, x, y);
-      });
-
-      const outerRadius = 960;
-      others.forEach((node, index) => {
-        const angle = (index / others.length) * 2 * Math.PI;
-        const x = centerX + outerRadius * Math.cos(angle);
-        const y = centerY + outerRadius * Math.sin(angle);
-        setCoords(node, x, y);
-      });
-
-      const allRepositionedBooks = [...updatedBooks];
-      allRepositionedBooks.forEach(book => {
-        const relatedQuotes = quotes.filter(q => q.book_id === book.id);
-        relatedQuotes.forEach((q, idx) => {
-          updatedQuotes.push({
-            ...q,
-            x_pos: book.x_pos + 200,
-            y_pos: book.y_pos + 60 + idx * 85
-          });
-        });
-      });
-
-      const repositionedQuoteIds = new Set(updatedQuotes.map(q => q.id));
-      quotes.forEach(q => {
-        if (!repositionedQuoteIds.has(q.id)) {
-          updatedQuotes.push(q);
-        }
-      });
-
-      for (const a of areas) {
-        await fetch(`/api/areas?id=${a.id}`, { method: "DELETE" });
-      }
-
-      const newAreas = [];
-      
-      const area1Res = await fetch("/api/areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "PRIMARY SEMANTIC HUB",
-          x_pos: centerX - 250,
-          y_pos: centerY - 250,
-          width: 500,
-          height: 500,
-          color: "rgba(168, 85, 247, 0.08)"
-        })
-      });
-      newAreas.push(await area1Res.json());
-
-      const area2Res = await fetch("/api/areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "DIRECT CORRELATIONS CORE",
-          x_pos: centerX - 700,
-          y_pos: centerY - 700,
-          width: 1400,
-          height: 1400,
-          color: "rgba(0, 170, 255, 0.03)"
-        })
-      });
-      newAreas.push(await area2Res.json());
-
-      const area3Res = await fetch("/api/areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "WORKSPACE FRINGE / SATELLITES",
-          x_pos: centerX - 1200,
-          y_pos: centerY - 1200,
-          width: 2400,
-          height: 2400,
-          color: "rgba(255, 255, 255, 0.01)"
-        })
-      });
-      newAreas.push(await area3Res.json());
-
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          books: updatedBooks,
-          notes: updatedNotes,
-          quotes: updatedQuotes,
-          pdfs: updatedPdfs
-        })
-      });
-
-      setBooks(prev => prev.map(b => updatedBooks.find(ub => ub.id === b.id) || b));
-      setNotes(prev => prev.map(n => updatedNotes.find(un => un.id === n.id) || n));
-      setQuotes(prev => prev.map(q => updatedQuotes.find(uq => uq.id === q.id) || q));
-      setPdfs(prev => prev.map(p => updatedPdfs.find(up => up.id === p.id) || p));
-      setAreas(newAreas);
-
-      setSelectedNodes([]);
-      
-      setIsFocusing(true);
-      setPan({ x: -centerX * 0.4 + 400, y: -centerY * 0.4 + 300 });
-      setScale(0.4);
-      setTimeout(() => setIsFocusing(false), 450);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const handleCanvasContextMenu = (e) => {
     // If clicking inside cards, handles, or buttons, ignore
@@ -3644,6 +2879,8 @@ export default function Canvas() {
 
   // Pointer drag/pan handlers
   const handleCanvasPointerDown = (e) => {
+    if (e.button === 2) return;
+    setDraggedNode(null);
     // Clear active text selection to prevent unwanted drag highlights
     window.getSelection()?.removeAllRanges();
     setContextMenu(null);
@@ -3843,6 +3080,12 @@ export default function Canvas() {
       containedItems,
       groupItems,
     };
+    setDraggedNode({
+      id,
+      type,
+      containedItems,
+      groupItems,
+    });
   }, []);
 
   const handlePointerMove = (e) => {
@@ -4212,7 +3455,7 @@ export default function Canvas() {
     }
   };
 
-  const handlePointerUp = (e) => {
+  const handlePointerUp = async (e) => {
     const wasGestureActive = isGestureActiveRef.current;
 
     // Remove pointer
@@ -4225,6 +3468,7 @@ export default function Canvas() {
     if (wasGestureActive) {
       dragRef.current = null;
       setIsDragging(false);
+      setDraggedNode(null);
       return;
     }
 
@@ -4274,6 +3518,16 @@ export default function Canvas() {
       }
       
       if (dist > 10) {
+        if (!targetEl) {
+          const rect = canvasRef.current.getBoundingClientRect();
+          const canvasX = (e.clientX - rect.left - pan.x) / scale;
+          const canvasY = (e.clientY - rect.top - pan.y) / scale;
+          const newNote = await handleCreateNote(canvasX - 110, canvasY - 75, "", true);
+          if (newNote) {
+            createLink(connectionSourceRef.current, { id: newNote.id, type: "note" }, true);
+            setNewlyCreatedNoteId(newNote.id);
+          }
+        }
         setConnectionSource(null);
       }
     }
@@ -4643,6 +3897,7 @@ export default function Canvas() {
     tempSnapshotRef.current = null;
 
     setIsDragging(false);
+    setDraggedNode(null);
     dragRef.current = null;
   };
 
@@ -4715,16 +3970,21 @@ export default function Canvas() {
           setIsHandwritingMode((prev) => {
             const next = !prev;
             if (next) {
-              setIsLassoMode(false);
               setIsDrawingMode(false);
+              setIsLassoMode(false);
             }
             return next;
           });
         } else if (e.key === "l" || e.key === "L") {
           e.preventDefault();
-          setIsLassoMode((prev) => !prev);
-          setIsHandwritingMode(false);
-          setIsDrawingMode(false);
+          setIsLassoMode((prev) => {
+            const next = !prev;
+            if (next) {
+              setIsHandwritingMode(false);
+              setIsDrawingMode(false);
+            }
+            return next;
+          });
         } else if (isHandwritingMode) {
           if (e.key === "e" || e.key === "E") {
             e.preventDefault();
@@ -4822,30 +4082,36 @@ export default function Canvas() {
         const delta = -e.deltaY;
         const zoomFactor = Math.exp(delta * multiplier);
         
-        setScale((prevScale) => {
-          const nextScale = Math.min(Math.max(prevScale * zoomFactor, 0.15), 3);
-          
-          const rect = canvas.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left;
-          const mouseY = e.clientY - rect.top;
-          
-          setPan((prevPan) => {
-            const canvasMouseX = (mouseX - prevPan.x) / prevScale;
-            const canvasMouseY = (mouseY - prevPan.y) / prevScale;
-            return {
-              x: mouseX - canvasMouseX * nextScale,
-              y: mouseY - canvasMouseY * nextScale,
-            };
-          });
-          
-          return nextScale;
-        });
+        const currentScale = scaleRef.current;
+        const currentPan = panRef.current;
+        
+        const nextScale = Math.min(Math.max(currentScale * zoomFactor, 0.15), 3);
+        
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const canvasMouseX = (mouseX - currentPan.x) / currentScale;
+        const canvasMouseY = (mouseY - currentPan.y) / currentScale;
+        
+        const nextPan = {
+          x: mouseX - canvasMouseX * nextScale,
+          y: mouseY - canvasMouseY * nextScale,
+        };
+        
+        setScale(nextScale);
+        setPan(nextPan);
+        
+        scaleRef.current = nextScale;
+        panRef.current = nextPan;
       } else {
         // Panning behavior (Miro/Figma swipe gesture or standard Scroll)
-        setPan((prevPan) => ({
-          x: prevPan.x - e.deltaX,
-          y: prevPan.y - e.deltaY,
-        }));
+        const nextPan = {
+          x: panRef.current.x - e.deltaX,
+          y: panRef.current.y - e.deltaY,
+        };
+        setPan(nextPan);
+        panRef.current = nextPan;
       }
     };
 
@@ -4963,7 +4229,7 @@ export default function Canvas() {
      (b.status === "Completed" && filters.statusCompleted)) &&
     (b.rating >= filters.minRating) &&
     (!filters.showOnlyOrphans || !links.some(l => l.source_id === b.id || l.target_id === b.id))
-  );
+  ).sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
 
   const filteredNotes = notes.filter(n => 
     filters.showNotes &&
@@ -5052,176 +4318,131 @@ export default function Canvas() {
       onDrop={handleCanvasDrop}
       style={{ cursor: canvasCursor, touchAction: "none" }}
     >
-      {/* Static deep space stars */}
-      <div className="space-bg pointer-events-none" />
-
-      {/* Animated parallax canvas stars */}
-      <StarfieldBackground pan={pan} scale={scale} />
-
-      <div
-        className={`absolute top-6 left-6 z-10 p-4 aero-panel w-64 max-h-[85vh] overflow-y-auto transition-all duration-300 ${
-          isPresentationMode ? "opacity-0 -translate-x-full pointer-events-none" : ""
-        }`}
-        onPointerDown={(e) => e.stopPropagation()}
-        onWheel={(e) => e.stopPropagation()}
-      >
-        <h1 className="text-xl font-bold tracking-widest text-white mb-1">AETHER_OS</h1>
-        <button
-          type="button"
-          onClick={() => setShowSearchModal(true)}
-          className="hud-text hover:text-[#00aaff] flex items-center gap-1.5 cursor-pointer text-left bg-transparent border-none p-0 outline-none w-full transition-colors font-mono uppercase tracking-wider text-[10px] text-gray-400 mt-1"
-        >
-          <span>🔍</span> <span>CMD+K // OPEN COMMAND CENTER</span>
-        </button>
-        <p className="hud-text mt-1 text-[10px] opacity-50">
+      {/* Minimal status wordmark & coordinates top-left */}
+      <div className="fixed top-6 left-6 z-30 pointer-events-none flex flex-col font-mono tracking-widest text-left select-none">
+        <span className="text-white text-[11px] font-bold opacity-80 uppercase">Aether_OS // Workspace</span>
+        <span className="text-gray-500 text-[8.5px] mt-0.5 uppercase">
           COORD: {Math.round(-pan.x)}, {Math.round(-pan.y)} | ZOOM: {Math.round(scale * 100)}%
-        </p>
+        </span>
+      </div>
 
-        <button
-          id="hud-add-zone-btn"
-          type="button"
-          onClick={() => {
-            setIsDrawingMode((prev) => {
-              const next = !prev;
-              if (next) {
-                setIsHandwritingMode(false);
-                setIsLassoMode(false);
-              }
-              return next;
-            });
-          }}
-          className={`aero-button text-[10px] py-1 px-3 mt-3 w-full transition-all ${
-            isDrawingMode
-              ? "bg-[#00aaff] text-black font-semibold shadow-[0_0_10px_rgba(0,170,255,0.5)]"
-              : "secondary text-white"
-          }`}
-        >
-          {isDrawingMode ? "CANCEL DRAW" : "ADD CATEGORY ZONE"}
-        </button>
+      {/* Hidden file inputs preserved for bottom toolbar / context menu actions */}
+      <input
+        id="canvas-pdf-upload-input"
+        type="file"
+        accept="application/pdf"
+        style={{ display: "none" }}
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          let x = 0;
+          let y = 0;
+          if (pendingPlacement) {
+            x = pendingPlacement.x;
+            y = pendingPlacement.y;
+            setPendingPlacement(null);
+          } else {
+            const currentPan = panRef.current;
+            const currentScale = scaleRef.current;
+            const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
+            const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
+            x = (widthFactor - currentPan.x) / currentScale - 225;
+            y = (heightFactor - currentPan.y) / currentScale - 300;
+          }
+          if (snapToGrid) {
+            x = Math.round(x / 20) * 20;
+            y = Math.round(y / 20) * 20;
+          }
+          await handleCreatePdf(file, x, y);
+          e.target.value = "";
+        }}
+      />
 
-        <button
-          id="hud-add-note-btn"
-          type="button"
-          onClick={handleCreateNote}
-          className="aero-button secondary text-[10px] py-1 px-3 mt-2 w-full transition-all text-white"
-        >
-          ADD NOTE (PRESS N)
-        </button>
+      <input
+        id="canvas-image-upload-input"
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          let x = 0;
+          let y = 0;
+          if (pendingPlacement) {
+            x = pendingPlacement.x;
+            y = pendingPlacement.y;
+            setPendingPlacement(null);
+          } else {
+            const currentPan = panRef.current;
+            const currentScale = scaleRef.current;
+            const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
+            const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
+            x = (widthFactor - currentPan.x) / currentScale - 150;
+            y = (heightFactor - currentPan.y) / currentScale - 150;
+          }
+          if (snapToGrid) {
+            x = Math.round(x / 20) * 20;
+            y = Math.round(y / 20) * 20;
+          }
+          await handleCreateImage(file, x, y);
+          e.target.value = "";
+        }}
+      />
 
+      <input
+        id="hud-restore-input"
+        type="file"
+        accept=".json"
+        onChange={handleRestoreWorkspace}
+        style={{ display: "none" }}
+      />
+
+      {/* Floating Bottom Toolbar */}
+      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 bg-[#0a0a0bf0] border border-white/10 rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl pointer-events-auto">
         <button
-          id="hud-upload-pdf-btn"
           type="button"
           onClick={() => {
             const input = document.getElementById("canvas-pdf-upload-input");
             if (input) input.click();
           }}
-          className="aero-button secondary text-[10px] py-1 px-3 mt-2 w-full transition-all text-white border border-white/10 hover:border-purple-500/50 hover:text-purple-400"
+          className="p-2 hover:bg-white/10 border border-white/5 text-[#a855f7] hover:text-white rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer w-9 h-9"
+          title="Upload PDF (Research Reference)"
         >
-          UPLOAD RESEARCH PDF
+          <span className="text-xs">📎</span>
         </button>
-
         <button
-          id="hud-upload-image-btn"
           type="button"
           onClick={() => {
             const input = document.getElementById("canvas-image-upload-input");
             if (input) input.click();
           }}
-          className="aero-button secondary text-[10px] py-1 px-3 mt-2 w-full transition-all text-white border border-white/10 hover:border-cyan-500/50 hover:text-cyan-400"
+          className="p-2 hover:bg-white/10 border border-white/5 text-[#00e1ff] hover:text-white rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer w-9 h-9"
+          title="Upload Image"
         >
-          IMPORT IMAGE
+          <span className="text-xs">🖼️</span>
         </button>
-
-        <input
-          id="canvas-pdf-upload-input"
-          type="file"
-          accept="application/pdf"
-          style={{ display: "none" }}
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            let x = 0;
-            let y = 0;
-            if (pendingPlacement) {
-              x = pendingPlacement.x;
-              y = pendingPlacement.y;
-              setPendingPlacement(null);
-            } else {
-              const currentPan = panRef.current;
-              const currentScale = scaleRef.current;
-              const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
-              const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
-              x = (widthFactor - currentPan.x) / currentScale - 225;
-              y = (heightFactor - currentPan.y) / currentScale - 300;
-            }
-            await handleCreatePdf(file, x, y);
-            e.target.value = "";
-          }}
-        />
-
-        <input
-          id="canvas-image-upload-input"
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            let x = 0;
-            let y = 0;
-            if (pendingPlacement) {
-              x = pendingPlacement.x;
-              y = pendingPlacement.y;
-              setPendingPlacement(null);
-            } else {
-              const currentPan = panRef.current;
-              const currentScale = scaleRef.current;
-              const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
-              const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
-              x = (widthFactor - currentPan.x) / currentScale - 150;
-              y = (heightFactor - currentPan.y) / currentScale - 150;
-            }
-            await handleCreateImage(file, x, y);
-            e.target.value = "";
-          }}
-        />
-
-        {/* Tidy Auto-Layout */}
         <button
-          id="hud-tidy-canvas-btn"
           type="button"
-          onClick={handleTidyCanvas}
-          className="aero-button bg-[#00aaff]/15 hover:bg-[#00aaff]/30 border border-[#00aaff]/30 text-[#00aaff] text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold"
+          onClick={handleBackupWorkspace}
+          className="p-2 hover:bg-white/10 border border-white/5 text-[#22c55e] hover:text-white rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer w-9 h-9"
+          title="Backup Workspace"
         >
-          TIDY CANVAS
+          <span className="text-xs">💾</span>
         </button>
-
-        {/* Handwriting Toggle */}
         <button
-          id="hud-handwriting-btn"
           type="button"
           onClick={() => {
-            setIsHandwritingMode((prev) => {
-              const next = !prev;
-              if (next) {
-                setIsLassoMode(false);
-                setIsDrawingMode(false);
-              }
-              return next;
-            });
+            const input = document.getElementById("hud-restore-input");
+            if (input) input.click();
           }}
-          className={`aero-button text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5 ${
-            isHandwritingMode
-              ? "bg-[#00aaff] text-black border border-[#00aaff] shadow-[0_0_10px_rgba(0,170,255,0.4)] font-bold"
-              : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
-          }`}
+          className="p-2 hover:bg-white/10 border border-white/5 text-[#eab308] hover:text-white rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer w-9 h-9"
+          title="Restore Workspace"
         >
-          ✏️ {isHandwritingMode ? "DISABLE DRAWING" : "HANDWRITING TOOL"}
+          <span className="text-xs">📂</span>
         </button>
-
-        {/* Lasso Selector Toggle */}
+        <div className="w-px h-5 bg-white/10 mx-1" />
+        {/* Lasso Select Mode Toggle */}
         <button
-          id="hud-lasso-btn"
           type="button"
           onClick={() => {
             setIsLassoMode((prev) => {
@@ -5233,694 +4454,48 @@ export default function Canvas() {
               return next;
             });
           }}
-          className={`aero-button text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5 ${
+          className={`p-2 border rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer w-9 h-9 ${
             isLassoMode
-              ? "bg-[#00aaff] text-black border border-[#00aaff] shadow-[0_0_10px_rgba(0,170,255,0.4)] font-bold"
-              : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
+              ? "bg-[#00aaff]/20 border-[#00aaff] text-[#00aaff] shadow-[0_0_10px_rgba(0,170,255,0.4)]"
+              : "hover:bg-white/10 border-white/5 text-[#00aaff] hover:text-white"
           }`}
+          title="Toggle Lasso Select Mode (L) - Click & drag background to select multiple items"
         >
-          ⏹️ {isLassoMode ? "DISABLE LASSO" : "LASSO SELECT"}
+          <span className="text-xs">🎯</span>
         </button>
-
+        {/* Handwriting Sketcing Mode Toggle */}
         <button
-          id="hud-auto-structure-btn"
           type="button"
-          onClick={() => setShowAutoLayoutMenu((prev) => !prev)}
-          className={`aero-button text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5 ${
-            showAutoLayoutMenu
-              ? "bg-[#00aaff] text-black border border-[#00aaff] shadow-[0_0_10px_rgba(0,170,255,0.4)]"
-              : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
+          onClick={() => {
+            setIsHandwritingMode((prev) => {
+              const next = !prev;
+              if (next) {
+                setIsLassoMode(false);
+                setIsDrawingMode(false);
+              }
+              return next;
+            });
+          }}
+          className={`p-2 border rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer w-9 h-9 ${
+            isHandwritingMode
+              ? "bg-[#22c55e]/20 border-[#22c55e] text-[#22c55e] shadow-[0_0_10px_rgba(34,197,94,0.4)]"
+              : "hover:bg-white/10 border-white/5 text-[#22c55e] hover:text-white"
           }`}
+          title="Toggle Sketching / Handwriting Mode (H)"
         >
-          <span>田</span> AUTO-STRUCTURE ENGINE
+          <span className="text-xs">✏️</span>
         </button>
-
-        {showAutoLayoutMenu && (
-          <div className="mt-2 p-2.5 bg-black/60 border border-white/10 rounded-lg flex flex-col gap-1.5 font-mono text-[9px] pointer-events-auto">
-            <div className="text-[8px] text-[#00aaff] font-bold uppercase tracking-wider mb-0.5">
-              Select Structural Template
-            </div>
-            
-            <button
-              type="button"
-              onClick={handleLayoutStatusKanban}
-              className="py-1 px-2 text-left bg-white/5 hover:bg-white/15 border border-white/10 hover:border-[#00aaff] rounded transition-all text-white flex flex-col"
-            >
-              <span className="font-bold text-[9px]">1. Status Kanban Board</span>
-              <span className="text-[7px] text-white/50">Organizes books by reading status into vertical columns with category zones.</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleLayoutRatingSwimlanes}
-              className="py-1 px-2 text-left bg-white/5 hover:bg-white/15 border border-white/10 hover:border-[#00aaff] rounded transition-all text-white flex flex-col mt-1"
-            >
-              <span className="font-bold text-[9px]">2. Star Rating Swimlanes</span>
-              <span className="text-[7px] text-white/50">Groups books horizontally based on review ratings with star badges.</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleLayoutTopologyRadial}
-              className="py-1 px-2 text-left bg-white/5 hover:bg-white/15 border border-white/10 hover:border-[#00aaff] rounded transition-all text-white flex flex-col mt-1"
-            >
-              <span className="font-bold text-[9px]">3. Network Topology Radial</span>
-              <span className="text-[7px] text-white/50">Groups elements radially outward centering around the most connected primary hub.</span>
-            </button>
-          </div>
-        )}
-
+        <div className="w-px h-5 bg-white/10 mx-1" />
         <button
-          id="hud-telemetry-dashboard-btn"
           type="button"
-          onClick={() => setShowTelemetryDashboard(true)}
-          className="aero-button bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5"
+          onClick={() => setShowShortcutsHelp(true)}
+          className="p-2 hover:bg-white/10 border border-white/5 text-purple-400 hover:text-white rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer font-bold w-9 h-9"
+          title="System Shortcuts Cheat Sheet"
         >
-          <span>📊</span> TELEMETRY DASHBOARD
+          <span className="text-xs">?</span>
         </button>
-
-        <button
-          id="hud-filters-deck-btn"
-          type="button"
-          onClick={() => setShowFiltersDeck((prev) => !prev)}
-          className={`aero-button text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5 ${
-            showFiltersDeck
-              ? "bg-[#00aaff] text-black border border-[#00aaff] shadow-[0_0_10px_rgba(0,170,255,0.4)]"
-              : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
-          }`}
-        >
-          <span>🔍</span> CANVAS FILTER DECK
-        </button>
-
-        {showFiltersDeck && (
-          <div className="mt-2 p-3 bg-[#0a0a0af5] border border-white/10 rounded-lg flex flex-col gap-2.5 font-mono text-[9px] pointer-events-auto shadow-xl">
-            <div className="text-[8px] text-[#00aaff] font-bold uppercase tracking-wider mb-0.5 border-b border-white/5 pb-1 flex justify-between items-center">
-              <span>Filter Workspace Nodes</span>
-              <button 
-                type="button"
-                onClick={() => setFilters({
-                  showBooks: true,
-                  showNotes: true,
-                  showPdfs: true,
-                  showAreas: true,
-                  showQuotes: true,
-                  showImages: true,
-                  statusToRead: true,
-                  statusReading: true,
-                  statusCompleted: true,
-                  minRating: 0,
-                  showOnlyOrphans: false
-                })}
-                className="text-[7px] text-[#00aaff]/60 hover:text-[#00aaff] transition-colors"
-              >
-                RESET
-              </button>
-            </div>
-            
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[7px] text-white/40 uppercase">MODULE TYPES:</span>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showBooks}
-                  onChange={(e) => setFilters(f => ({ ...f, showBooks: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>BOOKS ({books.length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showNotes}
-                  onChange={(e) => setFilters(f => ({ ...f, showNotes: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>INDEX NOTES ({notes.length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showPdfs}
-                  onChange={(e) => setFilters(f => ({ ...f, showPdfs: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>RESEARCH PDFS ({pdfs.length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showImages}
-                  onChange={(e) => setFilters(f => ({ ...f, showImages: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>IMPORTED IMAGES ({images.length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showAreas}
-                  onChange={(e) => setFilters(f => ({ ...f, showAreas: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>CATEGORY ZONES ({areas.length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showQuotes}
-                  onChange={(e) => setFilters(f => ({ ...f, showQuotes: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>QUOTE FRAGMENTS ({quotes.length})</span>
-              </label>
-            </div>
-
-            <div className="flex flex-col gap-1.5 border-t border-white/5 pt-2">
-              <span className="text-[7px] text-white/40 uppercase">READING STATUS:</span>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.statusToRead}
-                  onChange={(e) => setFilters(f => ({ ...f, statusToRead: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>TO READ ({books.filter(b => b.status === "To Read").length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.statusReading}
-                  onChange={(e) => setFilters(f => ({ ...f, statusReading: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>READING ({books.filter(b => b.status === "Reading").length})</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.statusCompleted}
-                  onChange={(e) => setFilters(f => ({ ...f, statusCompleted: e.target.checked }))}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span>COMPLETED ({books.filter(b => b.status === "Completed").length})</span>
-              </label>
-            </div>
-
-            <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
-              <div className="flex justify-between items-center text-[7px] text-white/40">
-                <span className="uppercase">MIN RATING:</span>
-                <span className="text-yellow-400 font-bold">{filters.minRating} ★ & ABOVE</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="5"
-                step="1"
-                value={filters.minRating}
-                onChange={(e) => setFilters(f => ({ ...f, minRating: parseInt(e.target.value) }))}
-                className="w-full accent-[#00aaff] bg-white/10 h-1 rounded-lg appearance-none cursor-pointer mt-1"
-              />
-              <div className="flex justify-between text-[6px] text-gray-500 font-mono mt-0.5">
-                <span>0★</span>
-                <span>1★</span>
-                <span>2★</span>
-                <span>3★</span>
-                <span>4★</span>
-                <span>5★</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5 border-t border-white/5 pt-2">
-              <span className="text-[7px] text-white/40 uppercase">SPATIAL CLEANUP:</span>
-              <label className="flex items-center gap-2 cursor-pointer text-white/80 hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={filters.showOnlyOrphans}
-                  onChange={(e) => {
-                    setFilters(f => ({ ...f, showOnlyOrphans: e.target.checked }));
-                    showToast(e.target.checked ? "SHOWING ORPHAN NODES (ZERO CONNECTIONS)" : "SHOWING ALL NODES");
-                  }}
-                  className="accent-[#00aaff] w-3 h-3 cursor-pointer"
-                />
-                <span className="text-yellow-400 font-bold">SHOW ONLY ORPHANS</span>
-              </label>
-            </div>
-          </div>
-        )}
-
-        <button
-          id="hud-link-categories-btn"
-          type="button"
-          onClick={() => setShowLinkCategoriesPanel((prev) => !prev)}
-          className={`aero-button text-[10px] py-1 px-3 mt-2 w-full transition-all font-semibold flex items-center justify-center gap-1.5 ${
-            showLinkCategoriesPanel
-              ? "bg-[#00aaff] text-black border border-[#00aaff] shadow-[0_0_10px_rgba(0,170,255,0.4)]"
-              : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
-          }`}
-        >
-          <span>🔗</span> LINK CATEGORIES
-        </button>
-
-        {showLinkCategoriesPanel && (
-          <div className="mt-2 p-3 bg-black/60 border border-white/10 rounded-lg flex flex-col gap-2 font-mono text-[9px] pointer-events-auto">
-            <div className="text-[8px] text-[#00aaff] font-bold uppercase tracking-wider mb-1">
-              Configure Visual Categories
-            </div>
-            {Object.entries(linkTypeConfigs).map(([typeKey, cfg]) => (
-              <div key={typeKey} className="flex flex-col gap-1 border-b border-white/5 pb-2 last:border-b-0 last:pb-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-white/40 capitalize">{typeKey}</span>
-                  <input
-                    type="color"
-                    value={cfg.color}
-                    onChange={(e) => {
-                      setLinkTypeConfigs((prev) => ({
-                        ...prev,
-                        [typeKey]: { ...prev[typeKey], color: e.target.value }
-                      }));
-                    }}
-                    className="w-4 h-4 bg-transparent border-0 cursor-pointer"
-                    title={`Change color for ${cfg.label}`}
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={cfg.label}
-                  onChange={(e) => {
-                    setLinkTypeConfigs((prev) => ({
-                      ...prev,
-                      [typeKey]: { ...prev[typeKey], label: e.target.value }
-                    }));
-                  }}
-                  className="bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-white outline-none focus:border-[#00aaff] text-[9px]"
-                  placeholder="Label representation"
-                />
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {/* Line & Grid toggles */}
-        <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-white/10">
-          <div className="flex gap-4">
-            <label className="flex items-center gap-1.5 cursor-pointer text-[9px] hud-text select-none">
-              <input
-                type="checkbox"
-                checked={showTimeline}
-                onChange={(e) => setShowTimeline(e.target.checked)}
-                className="rounded border-white/20 bg-black/40 accent-[#00aaff] w-3 h-3"
-              />
-              TIMELINE
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer text-[9px] hud-text select-none">
-              <input
-                type="checkbox"
-                checked={showConnections}
-                onChange={(e) => setShowConnections(e.target.checked)}
-                className="rounded border-white/20 bg-black/40 accent-[#00aaff] w-3 h-3"
-              />
-              CONNECTIONS
-            </label>
-          </div>
-          <div className="flex gap-4">
-          </div>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-1.5 cursor-pointer text-[9px] hud-text select-none">
-              <input
-                type="checkbox"
-                checked={showDrawings}
-                onChange={(e) => setShowDrawings(e.target.checked)}
-                className="rounded border-white/20 bg-black/40 accent-[#00aaff] w-3 h-3"
-              />
-              SHOW DRAWINGS
-            </label>
-          </div>
-        </div>
-
-        {/* Canvas Search Filter */}
-        <div className="mt-3 pt-3 border-t border-white/10">
-          <div className="text-[9px] hud-text font-bold text-white mb-2">TELEMETRY FILTER</div>
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              placeholder="FILTER MODULE DESIGNATION..."
-              value={canvasFilter}
-              onChange={(e) => setCanvasFilter(e.target.value)}
-              className="aero-input py-1.5 pl-2.5 pr-6 text-[9px] font-mono tracking-wider bg-black/60 text-white rounded w-full uppercase"
-            />
-            {canvasFilter && (
-              <button
-                type="button"
-                onClick={() => setCanvasFilter("")}
-                className="absolute right-2 text-white/40 hover:text-white text-[9px] leading-none"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        </div>        {/* Workspace Telemetry Dashboard */}
-        {(() => {
-          const totalBooks = books.length;
-          if (totalBooks === 0 && notes.length === 0 && links.length === 0 && areas.length === 0) return null;
-
-          const completed = books.filter(b => b.status === "Completed").length;
-          const reading = books.filter(b => b.status === "Reading").length;
-          const toRead = books.filter(b => b.status === "To Read").length;
-          
-          const rated = books.filter(b => b.rating > 0);
-          const avgRating = rated.length > 0 ? (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1) : "—";
-          
-          const supportLnk = links.filter(l => l.type === "support").length;
-          const contrastLnk = links.filter(l => l.type === "contrast").length;
-          const questionLnk = links.filter(l => l.type === "question").length;
-          const defaultLnk = links.filter(l => l.type === "default" || !l.type).length;
-
-          return (
-            <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="text-[9px] hud-text font-bold text-white mb-2">WORKSPACE TELEMETRY</div>
-              
-              {/* Progress bar for books */}
-              {totalBooks > 0 && (
-                <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden flex mb-2">
-                  {completed > 0 && (
-                    <div 
-                      className="h-full bg-[#22c55e] transition-all duration-700" 
-                      style={{ width: `${(completed / totalBooks) * 100}%` }}
-                      title={`Completed: ${completed}`}
-                    />
-                  )}
-                  {reading > 0 && (
-                    <div 
-                      className="h-full bg-[#00aaff] transition-all duration-700" 
-                      style={{ width: `${(reading / totalBooks) * 100}%` }}
-                      title={`Reading: ${reading}`}
-                    />
-                  )}
-                  {toRead > 0 && (
-                    <div 
-                      className="h-full bg-white/15 transition-all duration-700" 
-                      style={{ width: `${(toRead / totalBooks) * 100}%` }}
-                      title={`To Read: ${toRead}`}
-                    />
-                  )}
-                </div>
-              )}
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-1.5 font-mono text-[8px] text-gray-400">
-                <div className="bg-white/5 rounded p-1.5">
-                  <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Modules</div>
-                  <div className="flex justify-between"><span>Books:</span><span className="text-[#00aaff]">{totalBooks}</span></div>
-                  <div className="flex justify-between"><span>Notes:</span><span className="text-[#00aaff]">{notes.length}</span></div>
-                  <div className="flex justify-between"><span>Quotes:</span><span className="text-[#00aaff]">{quotes.length}</span></div>
-                  <div className="flex justify-between"><span>Zones:</span><span className="text-[#22c55e]">{areas.length}</span></div>
-                </div>
-                <div className="bg-white/5 rounded p-1.5">
-                  <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Relations</div>
-                  <div className="flex justify-between"><span>Support:</span><span className="text-[#22c55e]">{supportLnk}</span></div>
-                  <div className="flex justify-between"><span>Contrast:</span><span className="text-[#ef4444]">{contrastLnk}</span></div>
-                  <div className="flex justify-between"><span>Question:</span><span className="text-[#eab308]">{questionLnk}</span></div>
-                  <div className="flex justify-between"><span>Default:</span><span className="text-[#00aaff]">{defaultLnk}</span></div>
-                </div>
-              </div>
-
-              {/* Summary telemetry row */}
-              <div className="flex justify-between items-center mt-2 text-[8px] hud-text opacity-40 font-mono">
-                <span>AVG RATING: {avgRating} ★</span>
-                <span>TOTAL PATHS: {links.length}</span>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Topology Analytics & Navigation Console */}
-        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
-          <div className="text-[9px] hud-text font-bold text-white mb-1">TOPOLOGY ANALYTICS</div>
-          
-          <div className="grid grid-cols-2 gap-1.5 font-mono text-[8px] text-gray-400">
-            <div className="bg-white/5 rounded p-1.5 font-mono">
-              <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Network Stats</div>
-              <div className="flex justify-between"><span>Hubs (&gt;=3):</span><span className="text-[#a855f7]">{graphMetrics.hubs.length}</span></div>
-              <div className="flex justify-between"><span>Orphans (0):</span><span className="text-[#f97316]">{graphMetrics.orphans.length}</span></div>
-              <div className="flex justify-between"><span>Clusters:</span><span className="text-white">{graphMetrics.componentsCount}</span></div>
-            </div>
-            
-            <div className="bg-white/5 rounded p-1.5 flex flex-col justify-between font-mono">
-              <div className="text-white font-bold text-[8px] uppercase tracking-wider mb-1">Status</div>
-              <div className="text-[7px] text-gray-500 uppercase tracking-tight leading-tight">
-                {graphMetrics.orphans.length > 0 
-                  ? `${graphMetrics.orphans.length} isolated nodes detected. click finder below.` 
-                  : "all modules connected to network topology."}
-              </div>
-            </div>
-          </div>
-
-          {/* Hub Finder List */}
-          {graphMetrics.hubs.length > 0 && (
-            <div className="bg-white/5 rounded p-1.5 flex flex-col gap-1 max-h-24 overflow-y-auto">
-              <div className="text-white font-bold text-[7px] uppercase tracking-wider font-mono">Hub Teleporters (Focus Hub)</div>
-              <div className="flex flex-col gap-1">
-                {graphMetrics.hubs.map(h => (
-                  <button
-                    key={`hub-teleport-${h.id}`}
-                    type="button"
-                    onClick={() => centerOnNode(h.id, h.type)}
-                    className="text-left font-mono text-[7px] text-[#00aaff] hover:text-[#a855f7] bg-white/5 hover:bg-white/10 px-1 py-0.5 rounded flex items-center justify-between cursor-pointer"
-                  >
-                    <span className="truncate max-w-[120px]">{h.title}</span>
-                    <span className="text-[6px] text-gray-500 uppercase tracking-tighter">({h.type}) ⌖</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Orphan Finder List */}
-          {graphMetrics.orphans.length > 0 && (
-            <div className="bg-white/5 rounded p-1.5 flex flex-col gap-1 max-h-24 overflow-y-auto">
-              <div className="text-white font-bold text-[7px] uppercase tracking-wider font-mono">Orphan Finder (Needs Links)</div>
-              <div className="flex flex-col gap-1">
-                {graphMetrics.orphans.map(o => (
-                  <button
-                    key={`orphan-teleport-${o.id}`}
-                    type="button"
-                    onClick={() => centerOnNode(o.id, o.type)}
-                    className="text-left font-mono text-[7px] text-[#f97316] hover:text-[#00aaff] bg-white/5 hover:bg-white/10 px-1 py-0.5 rounded flex items-center justify-between cursor-pointer"
-                  >
-                    <span className="truncate max-w-[120px]">{o.title}</span>
-                    <span className="text-[6px] text-gray-500 uppercase tracking-tighter">({o.type}) ⌖</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Workspace Backup & Recovery Console */}
-        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
-          <div className="text-[9px] hud-text font-bold text-white mb-1">WORKSPACE CONSOLE</div>
-          <div className="flex gap-2">
-            <button
-              id="hud-backup-btn"
-              type="button"
-              onClick={handleBackupWorkspace}
-              className="aero-button secondary text-[8px] py-1 px-2 flex-1 transition-all text-white font-semibold"
-            >
-              BACKUP BOARD
-            </button>
-            <button
-              id="hud-restore-btn"
-              type="button"
-              onClick={() => document.getElementById("hud-restore-input").click()}
-              className="aero-button secondary text-[8px] py-1 px-2 flex-1 transition-all text-white font-semibold"
-            >
-              RESTORE BOARD
-            </button>
-          </div>
-          <button
-            id="hud-arrange-timeline-btn"
-            type="button"
-            onClick={handleArrangeTimeline}
-            className="aero-button secondary text-[8px] py-1 px-2 transition-all text-[#00aaff] border-[#00aaff]/30 font-semibold hover:bg-[#00aaff]/10 w-full"
-          >
-            ORGANIZE CHRONO-TIMELINE
-          </button>
-          <input
-            id="hud-restore-input"
-            type="file"
-            accept=".json"
-            onChange={handleRestoreWorkspace}
-            style={{ display: "none" }}
-          />
-        </div>
-
-        {/* Viewport Presets / Bookmarks Console */}
-        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <div className="text-[9px] hud-text font-bold text-white uppercase">VIEWPORT BOOKMARKS</div>
-            <div className="flex gap-1.5 items-center">
-              {presets.length > 0 && (
-                <button
-                  id="hud-present-btn"
-                  type="button"
-                  onClick={() => {
-                    setCurrentPresentationIndex(0);
-                    setIsPresentationMode(true);
-                    // Jump to first slide
-                    setIsFocusing(true);
-                    setPan({ x: presets[0].pan_x, y: presets[0].pan_y });
-                    setScale(presets[0].scale);
-                    setTimeout(() => setIsFocusing(false), 450);
-                  }}
-                  className="text-[#22c55e] hover:text-white transition-colors text-[8px] font-mono tracking-wider font-semibold border border-[#22c55e]/30 px-1 py-0.5 rounded bg-[#22c55e]/5"
-                  title="Present Storyboard Slideshow"
-                >
-                  ▶ PLAY
-                </button>
-              )}
-              <button
-                id="hud-save-preset-btn"
-                type="button"
-                onClick={createPreset}
-                className="text-[#00aaff] hover:text-white transition-colors text-[8px] font-mono tracking-wider font-semibold border border-[#00aaff]/30 px-1 py-0.5 rounded bg-[#00aaff]/5"
-              >
-                + ADD PRESET
-              </button>
-            </div>
-          </div>
-          {presets.length > 0 ? (
-            <div className="max-h-24 overflow-y-auto space-y-1 pr-1 font-mono text-[8px] uppercase tracking-wider text-gray-400">
-              {presets.map((preset) => (
-                <div
-                  key={preset.id}
-                  className="flex justify-between items-center bg-white/5 p-1 rounded hover:bg-[#00aaff]/10 transition-colors cursor-pointer"
-                  onClick={() => {
-                    setIsFocusing(true);
-                    setPan({ x: preset.pan_x, y: preset.pan_y });
-                    setScale(preset.scale);
-                    setTimeout(() => setIsFocusing(false), 450);
-                  }}
-                >
-                  <span className="truncate max-w-[120px] text-white">📍 {preset.name}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-gray-500 text-[6px]">({Math.round(preset.scale * 100)}%)</span>
-                    <button
-                      type="button"
-                      onClick={(e) => renamePreset(preset.id, preset.name, e)}
-                      className="text-white/40 hover:text-yellow-400 transition-colors px-1"
-                      title="RENAME PRESET"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => deletePreset(preset.id, e)}
-                      className="text-white/40 hover:text-red-400 transition-colors px-1"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-gray-600 text-center py-1 text-[8px] font-mono">NO BOOKMARKS SAVED</div>
-          )}
-        </div>
-
-        {/* Board Hashtags Console */}
-        {hashtags.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
-            <div className="text-[9px] hud-text font-bold text-white uppercase">BOARD HASHTAGS</div>
-            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-              {hashtags.map((tag) => {
-                const isSelected = canvasFilter.toLowerCase() === tag.toLowerCase();
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) {
-                        setCanvasFilter("");
-                      } else {
-                        setCanvasFilter(tag);
-                      }
-                    }}
-                    className={`text-[8px] font-mono tracking-wider px-2 py-0.5 rounded-full border transition-all ${
-                      isSelected
-                        ? "bg-[#00aaff] text-black border-[#00aaff] font-bold shadow-[0_0_8px_rgba(0,170,255,0.4)]"
-                        : "bg-white/5 text-gray-400 border-white/10 hover:text-white hover:border-[#00aaff]/35"
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Collapsible Workspace Index */}
-        <div className="mt-3 pt-3 border-t border-white/10">
-          <button
-            type="button"
-            onClick={() => setShowIndex((prev) => !prev)}
-            className="flex items-center justify-between w-full text-[9px] hud-text font-bold text-white hover:text-[#00aaff] transition-colors"
-          >
-            <span>WORKSPACE INDEX ({filteredBooks.length + filteredNotes.length + filteredAreas.length})</span>
-            <span>{showIndex ? "▲" : "▼"}</span>
-          </button>
-          
-          {showIndex && (
-            <div className="max-h-40 overflow-y-auto mt-2 space-y-1.5 pr-1 font-mono text-[9px] uppercase tracking-wider text-gray-400">
-              {filteredBooks.map((b) => (
-                <div 
-                  key={b.id} 
-                  className="flex justify-between items-center bg-white/5 p-1 rounded hover:bg-white/10 transition-colors font-sans cursor-pointer"
-                  onClick={() => focusOnNode(b.x_pos, b.y_pos, 192, 300)}
-                >
-                  <span className="truncate max-w-[120px] text-white">📖 {b.title}</span>
-                  <span className="text-[#00aaff] text-[8px] font-mono opacity-50">FOCUS</span>
-                </div>
-              ))}
-              {filteredNotes.map((n, i) => (
-                <div 
-                  key={n.id} 
-                  className="flex justify-between items-center bg-white/5 p-1 rounded hover:bg-white/10 transition-colors font-sans cursor-pointer"
-                  onClick={() => focusOnNode(n.x_pos, n.y_pos, n.width || 220, n.height || 150)}
-                >
-                  <span className="truncate max-w-[120px]">📝 Note #{i+1}</span>
-                  <span className="text-[#00aaff] text-[8px] font-mono opacity-50">FOCUS</span>
-                </div>
-              ))}
-              {filteredAreas.map((a) => (
-                <div 
-                  key={a.id} 
-                  className="flex justify-between items-center bg-white/5 p-1 rounded hover:bg-white/10 transition-colors font-sans cursor-pointer"
-                  onClick={() => focusOnNode(a.x_pos, a.y_pos, a.width || 200, a.height || 200)}
-                >
-                  <span className="truncate max-w-[120px] text-[#22c55e]">⏹ {a.name}</span>
-                  <span className="text-[#00aaff] text-[8px] font-mono opacity-50">FOCUS</span>
-                </div>
-              ))}
-              {books.length === 0 && notes.length === 0 && areas.length === 0 && (
-                <div className="text-gray-600 text-center py-2">EMPTY WORKSPACE</div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* System Help Trigger */}
-        <div className="mt-3 pt-3 border-t border-white/10">
-          <button
-            type="button"
-            onClick={() => setShowShortcutsHelp(true)}
-            className="aero-button secondary text-[8px] py-1.5 px-2.5 w-full transition-all text-white font-semibold flex items-center justify-center gap-1.5 hover:border-purple-500/30"
-          >
-            <span>⌨️</span> SYSTEM SHORTCUTS REF
-          </button>
-        </div>
       </div>
+
 
       <div
         className={`absolute top-0 left-0 w-full h-full origin-top-left canvas-nodes-container ${isFocusing ? "focus-transition" : ""}`}
@@ -5942,7 +4517,7 @@ export default function Canvas() {
 
         {/* Areas Layer */}
         {filteredAreas.map((area) => {
-          const isMatched = getAreaMatch(area) && (focusedCluster ? focusedCluster.nodeIds.has(area.id) : true);
+          const isMatched = getAreaMatch(area);
           const ax1 = area.x_pos;
           const ay1 = area.y_pos;
           const ax2 = area.x_pos + (area.width || 200);
@@ -5950,13 +4525,22 @@ export default function Canvas() {
           const areaBooks = books.filter(b => b.x_pos >= ax1 && b.x_pos <= ax2 && b.y_pos >= ay1 && b.y_pos <= ay2);
           const booksCount = areaBooks.length;
           const completedCount = areaBooks.filter(b => b.status === "Completed").length;
+          const isSelected = selectedNodes.some((n) => n.id === area.id && n.type === "area");
+          const isHighlighted = teleportHighlightNodeId === area.id;
+          const areaZIndex = isSelected || isHighlighted ? 19 : Math.min(18, 10 + (area.z_index || 0));
 
           return (
             <div
               key={area.id}
               className="transition-all duration-300"
               style={{
-                opacity: isMatched ? (getIsHoveredOrConnected(area.id, "area") ? 1 : 0.35) : 0.15,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: areaZIndex,
+                opacity: isMatched ? 1 : 0.15,
                 pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: area.id, type: "area" })}
@@ -5986,7 +4570,7 @@ export default function Canvas() {
                 onDelete={handleDeleteArea}
                 onRename={handleUpdateArea}
                 onArrangeNodes={handleArrangeAreaNodes}
-                isFocused={focusNode && focusNode.id === area.id && focusNode.type === "area"}
+                isFocused={false}
                 onToggleFocus={handleNodeToggleFocus}
                 isHighlighted={teleportHighlightNodeId === area.id}
                 isSelected={selectedNodes.some((n) => n.id === area.id && n.type === "area")}
@@ -5998,13 +4582,27 @@ export default function Canvas() {
 
         {/* PDFs Layer */}
         {filteredPdfs.map((pdf) => {
-          const isMatched = getPdfMatch(pdf) && (focusedCluster ? focusedCluster.nodeIds.has(pdf.id) : true);
+          const isMatched = getPdfMatch(pdf);
+          const isPdfDragging = isDragging && draggedNode && (
+            draggedNode.id === pdf.id || 
+            (draggedNode.groupItems && draggedNode.groupItems.some(gi => gi.id === pdf.id && gi.type === "pdf")) ||
+            (draggedNode.type === "area" && draggedNode.containedItems && draggedNode.containedItems.pdfs && draggedNode.containedItems.pdfs.some(cp => cp.id === pdf.id))
+          );
+          const isSelected = selectedNodes.some((n) => n.id === pdf.id && n.type === "pdf");
+          const isHighlighted = teleportHighlightNodeId === pdf.id;
+          const pdfZIndex = isSelected || isHighlighted ? 150 : 40 + (pdf.z_index || 0);
           return (
             <div
               key={pdf.id}
               className="transition-all duration-300"
               style={{
-                opacity: isMatched ? (getIsHoveredOrConnected(pdf.id, "pdf") ? 1 : 0.35) : 0.15,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: pdfZIndex,
+                opacity: isMatched ? 1 : 0.15,
                 pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: pdf.id, type: "pdf" })}
@@ -6034,13 +4632,14 @@ export default function Canvas() {
                 onStartConnection={handleStartConnection}
                 onToggleFocus={handleNodeToggleFocus}
                 canvasScale={scale}
-                isFocused={focusNode && focusNode.id === pdf.id && focusNode.type === "pdf"}
+                isFocused={false}
                 onInteract={handleNodeInteract}
                 linkedNotes={pdfLinkedNotesMap[pdf.id] || []}
                 onLocateNote={handleLocateNote}
                 isHighlighted={teleportHighlightNodeId === pdf.id}
                 isSelected={selectedNodes.some((n) => n.id === pdf.id && n.type === "pdf")}
                 isPinned={pinnedNodeIds.has(pdf.id)}
+                isDragging={isPdfDragging}
               />
             </div>
           );
@@ -6048,14 +4647,27 @@ export default function Canvas() {
 
         {/* Images Layer */}
         {filteredImages.map((image) => {
-          const isMatched = (!canvasFilter || (image.name && image.name.toLowerCase().includes(canvasFilter.toLowerCase()))) && 
-                            (focusedCluster ? focusedCluster.nodeIds.has(image.id) : true);
+          const isMatched = !canvasFilter || (image.name && image.name.toLowerCase().includes(canvasFilter.toLowerCase()));
+          const isImageDragging = isDragging && draggedNode && (
+            draggedNode.id === image.id || 
+            (draggedNode.groupItems && draggedNode.groupItems.some(gi => gi.id === image.id && gi.type === "image")) ||
+            (draggedNode.type === "area" && draggedNode.containedItems && draggedNode.containedItems.images && draggedNode.containedItems.images.some(ci => ci.id === image.id))
+          );
+          const isSelected = selectedNodes.some((n) => n.id === image.id && n.type === "image");
+          const isHighlighted = teleportHighlightNodeId === image.id;
+          const imageZIndex = isSelected || isHighlighted ? 150 : 40 + (image.z_index || 0);
           return (
             <div
               key={image.id}
               className="transition-all duration-300"
               style={{
-                opacity: isMatched ? (getIsHoveredOrConnected(image.id, "image") ? 1 : 0.35) : 0.15,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: imageZIndex,
+                opacity: isMatched ? 1 : 0.15,
                 pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: image.id, type: "image" })}
@@ -6084,12 +4696,13 @@ export default function Canvas() {
                 onStartConnection={handleStartConnection}
                 onToggleFocus={handleNodeToggleFocus}
                 canvasScale={scale}
-                isFocused={focusNode && focusNode.id === image.id && focusNode.type === "image"}
+                isFocused={false}
                 onInteract={handleNodeInteract}
                 isHighlighted={teleportHighlightNodeId === image.id}
                 isSelected={selectedNodes.some((n) => n.id === image.id && n.type === "image")}
                 isPinned={pinnedNodeIds.has(image.id)}
                 onRename={handleUpdateImage}
+                isDragging={isImageDragging}
               />
             </div>
           );
@@ -6097,13 +4710,22 @@ export default function Canvas() {
 
         {/* Notes Layer */}
         {filteredNotes.map((note) => {
-          const isMatched = getNoteMatch(note) && (focusedCluster ? focusedCluster.nodeIds.has(note.id) : true);
+          const isMatched = getNoteMatch(note);
+          const isSelected = selectedNodes.some((n) => n.id === note.id && n.type === "note");
+          const isHighlighted = teleportHighlightNodeId === note.id;
+          const noteZIndex = isSelected || isHighlighted ? 150 : 50 + (note.z_index || 0);
           return (
             <div
               key={note.id}
               className="transition-all duration-300"
               style={{
-                opacity: isMatched ? (getIsHoveredOrConnected(note.id, "note") ? 1 : 0.35) : 0.15,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: noteZIndex,
+                opacity: isMatched ? 1 : 0.15,
                 pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: note.id, type: "note" })}
@@ -6131,7 +4753,7 @@ export default function Canvas() {
                 onDelete={handleDeleteNote}
                 onEdit={handleEditNote}
                 onStartConnection={handleStartConnection}
-                isFocused={focusNode && focusNode.id === note.id && focusNode.type === "note"}
+                isFocused={false}
                 onToggleFocus={handleNodeToggleFocus}
                 isHighlighted={teleportHighlightNodeId === note.id}
                 isSelected={selectedNodes.some((n) => n.id === note.id && n.type === "note")}
@@ -6140,6 +4762,7 @@ export default function Canvas() {
                 onEditingStarted={() => setNewlyCreatedNoteId(null)}
                 onTabOut={handleNoteTabOut}
                 onArrowNavigation={handleNoteArrowNavigation}
+                onTabArrowNavigation={handleNoteTabArrowNavigation}
               />
             </div>
           );
@@ -6175,7 +4798,7 @@ export default function Canvas() {
           />
         )}
 
-        <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
+        <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none" style={{ zIndex: 20 }}>
           <defs>
             {/* arrow-default */}
             <marker id="arrow-default" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
@@ -6209,7 +4832,7 @@ export default function Canvas() {
               const x2 = nextBook.x_pos + 96;
               const y2 = nextBook.y_pos + 150;
               const pathData = getBezierPath(x1, y1, x2, y2);
-              const isMatched = (getBookMatch(book) || getBookMatch(nextBook)) && (focusedCluster ? (focusedCluster.nodeIds.has(book.id) && focusedCluster.nodeIds.has(nextBook.id)) : true);
+              const isMatched = getBookMatch(book) || getBookMatch(nextBook);
               return (
                 <path
                   key={`line-${book.id}`}
@@ -6234,7 +4857,7 @@ export default function Canvas() {
             const x2 = quote.x_pos + 40;
             const y2 = quote.y_pos + 30;
             const pathData = getBezierPath(x1, y1, x2, y2);
-            const isMatched = (getQuoteMatch(quote) || getBookMatch(book)) && (focusedCluster ? (focusedCluster.nodeIds.has(book.id) || focusedCluster.quoteIds.has(quote.id)) : true);
+            const isMatched = getQuoteMatch(quote) || getBookMatch(book);
             return (
               <path
                 key={`link-${quote.id}`}
@@ -6277,7 +4900,7 @@ export default function Canvas() {
               : getSmartBezierPath(start, end);
             const midX = (start.x + end.x) / 2;
             const midY = (start.y + end.y) / 2;
-            const isMatched = (getNodeMatch(link.source_id, link.source_type) || getNodeMatch(link.target_id, link.target_type)) && (focusedCluster ? focusedCluster.linkIds.has(link.id) : true);
+            const isMatched = getNodeMatch(link.source_id, link.source_type) || getNodeMatch(link.target_id, link.target_type);
 
             const getLinkColor = (type) => {
               const hex = linkTypeConfigs[type || "default"]?.color || "#00aaff";
@@ -6321,7 +4944,7 @@ export default function Canvas() {
                 key={link.id} 
                 className="group/link"
                 style={{ 
-                  opacity: isMatched ? (hoveredNode ? (isLinkConnectedToHovered ? 1 : 0.25) : 1) : 0.15, 
+                  opacity: isMatched ? 1 : 0.15, 
                   pointerEvents: isMatched ? "auto" : "none",
                   transition: "opacity 0.3s"
                 }}
@@ -6573,32 +5196,6 @@ export default function Canvas() {
                         />
                       </div>
 
-                      {/* Link Style Types / Category Selection */}
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[7px] text-white/40 uppercase tracking-wider">Relationship Category</label>
-                        <div className="grid grid-cols-4 gap-1">
-                          {Object.entries(linkTypeConfigs).map(([typeKey, cfg]) => (
-                            <button
-                              key={typeKey}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpdateLinkType(link.id, typeKey);
-                              }}
-                              className={`py-1 rounded border text-[8px] text-center transition-all ${
-                                link.type === typeKey
-                                  ? "border-white bg-white/10 font-bold"
-                                  : "border-white/5 bg-white/5 hover:bg-white/10 text-white/70"
-                              }`}
-                              style={{ color: cfg.color }}
-                              title={cfg.label}
-                            >
-                              {cfg.label.slice(0, 7)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
                       {/* Connection Custom Color Picker (Direct Customization) */}
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between">
@@ -6809,13 +5406,21 @@ export default function Canvas() {
         </svg>
 
         {filteredQuotes.map((quote) => {
-          const isMatched = getQuoteMatch(quote) && (focusedCluster ? focusedCluster.quoteIds.has(quote.id) : true);
+          const isMatched = getQuoteMatch(quote);
+          const isSelected = selectedNodes.some((n) => n.id === quote.id && n.type === "quote");
+          const quoteZIndex = isSelected ? 150 : 30 + (quote.z_index || 0);
           return (
             <div
               key={quote.id}
               className="transition-all duration-300"
               style={{
-                opacity: isMatched ? (getIsHoveredOrConnected(quote.id, "quote") ? 1 : 0.35) : 0.15,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: quoteZIndex,
+                opacity: isMatched ? 1 : 0.15,
                 pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: quote.id, type: "quote" })}
@@ -6848,13 +5453,22 @@ export default function Canvas() {
         })}
 
         {filteredBooks.map((book) => {
-          const isMatched = getBookMatch(book) && (focusedCluster ? focusedCluster.nodeIds.has(book.id) : true);
+          const isMatched = getBookMatch(book);
+          const isSelected = selectedNodes.some((n) => n.id === book.id && n.type === "book");
+          const isHighlighted = teleportHighlightNodeId === book.id;
+          const bookZIndex = isSelected || isHighlighted ? 150 : 50 + (book.z_index || 0);
           return (
             <div
               key={book.id}
               className="transition-all duration-300"
               style={{
-                opacity: isMatched ? (getIsHoveredOrConnected(book.id, "book") ? 1 : 0.35) : 0.15,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: bookZIndex,
+                opacity: isMatched ? 1 : 0.15,
                 pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: book.id, type: "book" })}
@@ -6880,7 +5494,7 @@ export default function Canvas() {
                 onClick={handleBookClick}
                 onDragStart={handleItemDragStart}
                 onStartConnection={handleStartConnection}
-                isFocused={focusNode && focusNode.id === book.id && focusNode.type === "book"}
+                isFocused={false}
                 onToggleFocus={handleNodeToggleFocus}
                 isHighlighted={teleportHighlightNodeId === book.id}
                 isSelected={selectedNodes.some((n) => n.id === book.id && n.type === "book")}
@@ -7038,13 +5652,30 @@ export default function Canvas() {
         </div>
       )}
 
+      {isLassoMode && (
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-[#00aaff]/40 rounded-xl shadow-[0_10px_35px_rgba(0,170,255,0.2)] backdrop-blur-xl pointer-events-auto">
+          <div className="flex flex-col font-mono text-[9px] tracking-widest text-[#00aaff] border-r border-white/10 pr-4">
+            <span className="font-bold">🎯 LASSO MATRIX ACTIVE</span>
+            <span className="text-white/40 mt-0.5">
+              [DRAG WORKSPACE BACKGROUND TO SELECT MULTIPLE CARDS]
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsLassoMode(false)}
+            className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white text-[8px] font-mono font-bold tracking-wider border border-white/10 rounded transition-all cursor-pointer h-7 flex items-center"
+          >
+            EXIT
+          </button>
+        </div>
+      )}
+
       <SearchModal
         isOpen={showSearchModal}
         onOpen={() => setShowSearchModal(true)}
         onClose={() => setShowSearchModal(false)}
         onAddBook={handleAddBook}
         onAddNote={handleCreateNote}
-        onTidyCanvas={handleTidyCanvas}
         onToggleTimeline={() => setShowTimeline((prev) => !prev)}
         onToggleConnections={() => setShowConnections((prev) => !prev)}
         onResetViewport={() => { setPan({ x: 0, y: 0 }); setScale(1); }}
@@ -7059,18 +5690,6 @@ export default function Canvas() {
         images={images}
         onTeleport={centerOnNode}
       />
-
-      {showTelemetryDashboard && (
-        <TelemetryDashboard
-          books={books}
-          notes={notes}
-          areas={areas}
-          links={links}
-          quotes={quotes}
-          onClose={() => setShowTelemetryDashboard(false)}
-          onTeleport={centerOnNode}
-        />
-      )}
 
       {selectedNodes.length > 0 && (
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 flex flex-col md:flex-row items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-white/10 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl pointer-events-auto">
@@ -7374,26 +5993,6 @@ export default function Canvas() {
                   <span className="text-[7px] text-gray-500 font-bold">DRAG</span>
                 </button>
                 <div className="h-px bg-white/10 my-0.5 mx-1" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleArrangeTimeline();
-                    setContextMenu(null);
-                  }}
-                  className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
-                >
-                  <span>ALIGN TIMELINE</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleTidyCanvas();
-                    setContextMenu(null);
-                  }}
-                  className="text-left text-gray-300 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer"
-                >
-                  <span>TIDY WORKSPACE</span>
-                </button>
                 <div className="h-px bg-white/10 my-0.5 mx-1" />
                 <button
                   type="button"
@@ -8310,7 +6909,7 @@ export default function Canvas() {
                 <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
                   <div className="flex justify-between items-center"><span className="text-gray-400">Pan Workspace</span><span className="text-white">Drag Empty Canvas</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Zoom Camera</span><span className="text-white">Mouse Scroll wheel</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Reset Viewport</span><span className="text-white">HOME button in Sidebar</span></div>
+                  <div className="flex justify-between items-center"><span className="text-gray-400">Reset Viewport</span><span className="text-white">HOME in Command Center</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Snap View to Node</span><span className="text-white">Click FOCUS in Workspace Index</span></div>
                 </div>
               </div>
@@ -8336,7 +6935,6 @@ export default function Canvas() {
                 <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
                   <div className="flex justify-between items-center"><span className="text-gray-400">Create Connection</span><span className="text-white">Drag from card boundary connector dot</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Midpoint Controls HUD</span><span className="text-white">Hover cursor over link path line</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Classify Relation</span><span className="text-white">Click midpoint HUD style dot</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Toggle Arrowhead</span><span className="text-white">Click Arrow cycle button (— / ➡ / ↔)</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Modify Text Label</span><span className="text-white">Double-click label badge (Esc to abort)</span></div>
                 </div>
@@ -8350,11 +6948,9 @@ export default function Canvas() {
                 <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
                   <div className="flex justify-between items-center"><span className="text-gray-400">Command Console</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">Cmd/Ctrl + K</kbd></span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Isolate Node / Area</span><span className="text-white">Click Eye icon (👁) in Node/Area header</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Hashtag Filtering</span><span className="text-white">Click Tag in Sidebar hashtags cloud</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Slideshow Navigation</span><span className="text-white">Space / ➡ (Next), ⬅ (Prev), Esc (Exit)</span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Handwriting Mode</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">H</kbd></span></div>
                   <div className="flex justify-between items-center"><span className="text-gray-400">Brush / Eraser Toggle</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">B</kbd> / <kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">E</kbd></span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Lasso Selection Mode</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">L</kbd></span></div>
                 </div>
               </div>
 

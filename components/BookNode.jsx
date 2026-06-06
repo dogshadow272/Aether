@@ -4,6 +4,7 @@ import { Link, Eye } from "lucide-react";
 
 function BookNode({ book, onDragStart, onStartConnection, isFocused, onToggleFocus, isHighlighted, isSelected, isPinned }) {
   const handlePointerDown = (e) => {
+    if (e.button === 2) return;
     if (e.shiftKey) return;
     if (isPinned) return;
     // If clicking a handle, don't drag
@@ -19,15 +20,15 @@ function BookNode({ book, onDragStart, onStartConnection, isFocused, onToggleFoc
       className={`absolute aero-panel w-48 group transition-shadow duration-300 ${
         isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
       } ${
-        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-selected" : ""
       } ${
-        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-selected" : ""
       }`}
       style={{
         left: book.x_pos,
         top: book.y_pos,
         touchAction: "none",
-        zIndex: 10,
+        zIndex: isSelected || isHighlighted ? 150 : 50 + (book.z_index || 0),
       }}
       onPointerDown={handlePointerDown}
       onDoubleClick={(e) => {

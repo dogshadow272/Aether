@@ -36,7 +36,7 @@ export async function POST(request) {
     
     insertNoteStmt.run({
       id,
-      content: data.content || 'DOUBLE-CLICK TO EDIT NOTE',
+      content: data.content || '',
       x_pos: data.x_pos || 0,
       y_pos: data.y_pos || 0,
       width: data.width || 220,

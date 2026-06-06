@@ -17,7 +17,8 @@ function PdfNode({
   onInteract,
   isHighlighted,
   isSelected,
-  isPinned
+  isPinned,
+  isDragging
 }) {
   const [isClipboardOpen, setIsClipboardOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("clipboard"); // "clipboard" or "highlights"
@@ -95,6 +96,7 @@ function PdfNode({
   }, [pdf.width, pdf.height]);
 
   const handlePointerDownDrag = (e) => {
+    if (e.button === 2) return;
     if (e.shiftKey) return;
     if (isPinned) return;
     if (e.target.closest("button") || e.target.closest("textarea") || e.target.closest("canvas") || e.target.closest(".textLayer") || e.target.closest("input")) return;
@@ -135,24 +137,48 @@ function PdfNode({
     }
   };
 
+  if (isDragging) {
+    return (
+      <div
+        data-node-id={pdf.id}
+        data-node-type="pdf"
+        className="absolute border border-dashed border-[#a855f7]/70 bg-[#a855f7]/5 rounded-lg flex flex-col items-center justify-center pointer-events-none select-none"
+        style={{
+          left: pdf.x_pos,
+          top: pdf.y_pos,
+          width: isClipboardOpen ? Math.max(pdf.width || 450, 750) : (pdf.width || 450),
+          height: pdf.height || 600,
+          touchAction: "none",
+          zIndex: 1000,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
+        }}
+      >
+        <div className="flex flex-col items-center gap-2 text-[#a855f7] font-mono text-[10px] uppercase tracking-wider font-bold">
+          <span>📎 DRAG ACTIVE</span>
+          <span className="text-white/60 text-[9px] lowercase font-normal">{pdf.name}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-node-id={pdf.id}
       data-node-type="pdf"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto bg-[#050505e0] border-white/10 backdrop-blur-xl group transition-all duration-300 ${
-        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-selected" : ""
       } ${
-        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
+        isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-selected" : ""
       }`}
       style={{
         left: pdf.x_pos,
         top: pdf.y_pos,
-        width: pdf.width || 450,
+        width: isClipboardOpen ? Math.max(pdf.width || 450, 750) : (pdf.width || 450),
         height: pdf.height || 600,
-        minWidth: 300,
+        minWidth: isClipboardOpen ? 650 : 300,
         minHeight: 400,
         touchAction: "none",
-        zIndex: 5,
+        zIndex: isSelected || isHighlighted ? 150 : 40 + (pdf.z_index || 0),
         boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
       }}
     >
@@ -303,223 +329,235 @@ function PdfNode({
         </div>
       </div>
 
-      {/* PDF Viewer Iframe Body */}
-      <div 
-        className="flex-1 bg-black relative"
-        onPointerDown={(e) => {
-          if (e.shiftKey) return;
-          e.stopPropagation();
-        }}
-      >
-        <iframe
-          ref={iframeRef}
-          src={`/pdf-viewer.html?file=/uploads/${pdf.filename}&pdfId=${pdf.id}&page=${pageNumber}`}
-          className="w-full h-full border-none select-text"
-          title={pdf.name}
-        />
-        
-        {/* Interaction Overlay only when zoomed out far to guide focus */}
-        {(canvasScale < 0.5 && !isFocused) && (
-          <div 
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onInteract) onInteract(pdf.id, "pdf", true);
-            }}
-            className="absolute inset-0 bg-black/40 hover:bg-black/20 backdrop-blur-[1px] flex flex-col items-center justify-center cursor-pointer transition-all duration-300 z-10"
-            title="Click to Zoom & Interact"
-          >
-            <div className="bg-black/85 border border-white/20 px-3 py-1.5 rounded-lg text-white font-mono text-[10px] tracking-wider shadow-lg flex items-center gap-1.5 animate-pulse">
-              <span>⌕</span> CLICK TO ZOOM & EXTRACT QUOTES
+      {/* Main Body (Horizontal layout when Highlights side-panel is open) */}
+      <div className="flex-1 flex flex-row min-h-0 relative rounded-b-lg overflow-hidden">
+        {/* PDF Viewer Iframe Body */}
+        <div 
+          className="flex-1 bg-black relative"
+          onPointerDown={(e) => {
+            if (e.shiftKey) return;
+            e.stopPropagation();
+          }}
+        >
+          <iframe
+            ref={iframeRef}
+            src={`/pdf-viewer.html?file=/uploads/${pdf.filename}&pdfId=${pdf.id}&page=${pageNumber}`}
+            className="w-full h-full border-none select-text"
+            title={pdf.name}
+          />
+          
+          {/* Interaction Overlay only when zoomed out far to guide focus */}
+          {(canvasScale < 0.5 && !isFocused) && (
+            <div 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onInteract) onInteract(pdf.id, "pdf", true);
+              }}
+              className="absolute inset-0 bg-black/40 hover:bg-black/20 backdrop-blur-[1px] flex flex-col items-center justify-center cursor-pointer transition-all duration-300 z-10"
+              title="Click to Zoom & Interact"
+            >
+              <div className="bg-black/85 border border-white/20 px-3 py-1.5 rounded-lg text-white font-mono text-[10px] tracking-wider shadow-lg flex items-center gap-1.5 animate-pulse">
+                <span>⌕</span> CLICK TO ZOOM & EXTRACT QUOTES
+              </div>
+            </div>
+          )}
+        </div>
+        {/* Quote Extractor & Highlights Side Drawer */}
+        {isClipboardOpen && (
+          <div className="w-[280px] border-l border-white/10 bg-[#070708f5] backdrop-blur-xl flex flex-col relative h-full shrink-0 select-text">
+            {/* Sticky Header with Tabs */}
+            <div className="flex justify-between items-center border-b border-white/10 p-3 select-none shrink-0 bg-black/40">
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("clipboard")}
+                  className={`text-[10px] uppercase tracking-wider font-bold transition-all duration-200 cursor-pointer pb-1 border-b-2 ${
+                    activeTab === "clipboard"
+                      ? "text-[#a855f7] border-[#a855f7]"
+                      : "text-white/40 border-transparent hover:text-white/80"
+                  }`}
+                >
+                  CLIPBOARD
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("highlights")}
+                  className={`text-[10px] uppercase tracking-wider font-bold transition-all duration-200 cursor-pointer pb-1 border-b-2 ${
+                    activeTab === "highlights"
+                      ? "text-[#a855f7] border-[#a855f7]"
+                      : "text-white/40 border-transparent hover:text-white/80"
+                  }`}
+                >
+                  HIGHLIGHTS ({highlights.length})
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClipboardOpen(false)}
+                className="text-white/40 hover:text-white cursor-pointer transition-colors p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Content Area */}
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3.5 custom-scrollbar">
+              {activeTab === "clipboard" ? (
+                <>
+                  <textarea
+                    value={clipboardText}
+                    onChange={(e) => setClipboardText(e.target.value)}
+                    placeholder="Paste text selected from the document above... then click Spawn Note to drop a linked card."
+                    className="w-full h-24 bg-black/80 border border-white/10 text-white p-2.5 rounded-md outline-none resize-none font-sans text-xs focus:border-[#a855f7] placeholder:text-white/20 transition-all duration-200"
+                  />
+                  <div className="text-[8px] text-white/30 mb-0.5 select-none font-sans leading-relaxed">
+                    PRO-TIP: SELECT TEXT IN PDF AND PRESS 1, 2 OR 3 TO HIGHLIGHT (0/BACKSPACE TO DELETE).
+                  </div>
+                  {clipboardText.trim() && (
+                    <div
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", clipboardText.trim());
+                        e.dataTransfer.setData("application/x-pdf-source-id", pdf.id);
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
+                      className="bg-[#a855f7]/20 hover:bg-[#a855f7]/30 border border-[#a855f7]/50 text-white py-2 rounded-md cursor-grab active:cursor-grabbing text-[9px] select-none text-center font-bold tracking-widest transition-all animate-pulse flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(168,85,247,0.3)]"
+                      title="Drag this quote anywhere on the canvas to spawn a note card!"
+                    >
+                      <span>✥</span> DRAG QUOTE TO CANVAS
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSpawnClick}
+                    disabled={!clipboardText.trim()}
+                    className={`py-2 rounded-md text-center font-bold tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[9px] ${
+                      justSpawned
+                        ? "bg-green-500 text-black shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                        : clipboardText.trim()
+                        ? "bg-[#a855f7] text-white hover:bg-[#a855f7]/95"
+                        : "bg-white/5 text-white/20 border border-white/5 cursor-not-allowed"
+                    }`}
+                  >
+                    {justSpawned ? (
+                      <>
+                        <Check size={10} /> LINKED NOTE CREATED
+                      </>
+                    ) : (
+                      "SPAWN LINKED INDEX NOTE"
+                    )}
+                  </button>
+
+                  {linkedNotes && linkedNotes.length > 0 && (
+                    <div className="mt-2 pt-2.5 border-t border-white/10 flex flex-col gap-2">
+                      <span className="text-white/40 select-none uppercase tracking-wider text-[8px] font-bold">SPAWNED QUOTE CARDS ({linkedNotes.length}):</span>
+                      <div className="flex flex-col gap-1.5 font-sans">
+                        {linkedNotes.map((note) => {
+                          const cleanText = note.content.replace(/<[^>]*>/g, "").trim() || "Empty note...";
+                          return (
+                            <button
+                              key={note.id}
+                              type="button"
+                              onClick={() => onLocateNote && onLocateNote(note.id)}
+                              className="text-left bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white px-2.5 py-2 rounded-md text-[10px] truncate transition-all duration-150 cursor-pointer flex justify-between items-center gap-2"
+                            >
+                              <span className="truncate">{cleanText}</span>
+                              <span className="text-[7px] text-[#00aaff] font-mono shrink-0 tracking-wider">LOCATE ⌖</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col gap-3 select-none">
+                  {Object.keys(highlights.reduce((acc, h) => {
+                    const page = h.page_number;
+                    if (!acc[page]) acc[page] = [];
+                    acc[page].push(h);
+                    return acc;
+                  }, {})).length === 0 ? (
+                    <div className="text-white/30 text-center py-6 select-none flex flex-col items-center justify-center gap-2">
+                      <span className="text-lg">📋</span>
+                      <span className="text-[9px] tracking-wider uppercase font-bold text-white/40">NO HIGHLIGHTS YET</span>
+                      <div className="text-[8px] uppercase font-sans leading-relaxed text-white/20 max-w-[180px]">Select text inside PDF and press 1 (purple), 2 (cyan), or 3 (green)</div>
+                    </div>
+                  ) : (
+                    Object.keys(highlights.reduce((acc, h) => {
+                      const page = h.page_number;
+                      if (!acc[page]) acc[page] = [];
+                      acc[page].push(h);
+                      return acc;
+                    }, {}))
+                      .map(Number)
+                      .sort((a, b) => a - b)
+                      .map((page) => {
+                        const pageHighlights = highlights.filter(h => h.page_number === page);
+                        return (
+                          <div key={page} className="flex flex-col gap-2">
+                            <div className="text-[#00aaff] font-bold text-[9px] uppercase tracking-wider select-none border-b border-white/10 pb-1 mt-1 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#00aaff]"></span>
+                              PAGE {page}
+                            </div>
+                            <div className="flex flex-col gap-2 font-sans">
+                              {pageHighlights.map((h) => {
+                                let colorBorder = "border-l-2 border-l-[#a855f7] bg-[#a855f7]/5 hover:bg-[#a855f7]/10 border-white/5 hover:border-[#a855f7]/30";
+                                if (h.color === "cyan") colorBorder = "border-l-2 border-l-[#00aaff] bg-[#00aaff]/5 hover:bg-[#00aaff]/10 border-white/5 hover:border-[#00aaff]/30";
+                                else if (h.color === "green") colorBorder = "border-l-2 border-l-[#22c55e] bg-[#22c55e]/5 hover:bg-[#22c55e]/10 border-white/5 hover:border-[#22c55e]/30";
+                                return (
+                                  <div
+                                    key={h.id}
+                                    className={`flex flex-col gap-2.5 p-3 rounded-md border transition-all duration-200 ${colorBorder}`}
+                                  >
+                                    <div className="text-white/95 text-[10px] leading-relaxed font-sans select-text break-words">
+                                      &ldquo;{h.text}&rdquo;
+                                    </div>
+                                    <div className="flex justify-between items-center gap-1 font-mono text-[8px] pt-2 border-t border-white/5">
+                                      <span className="text-[7px] text-white/30 uppercase font-sans">
+                                        {h.color}
+                                      </span>
+                                      <div className="flex gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPageNumber(h.page_number)}
+                                          className="bg-white/5 hover:bg-white/10 text-white/80 hover:text-white px-2 py-0.5 rounded text-[8px] font-bold transition-colors cursor-pointer flex items-center gap-0.5"
+                                          title="Jump to page"
+                                        >
+                                          JUMP ⌖
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => onSpawnNote && onSpawnNote(pdf.id, h.text)}
+                                          className="bg-[#a855f7]/20 hover:bg-[#a855f7]/30 text-white border border-[#a855f7]/40 px-2 py-0.5 rounded text-[8px] font-bold transition-all cursor-pointer flex items-center gap-0.5"
+                                          title="Spawn index note from highlight"
+                                        >
+                                          SPAWN ✥
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteHighlight(h.id)}
+                                          className="bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-2 py-0.5 rounded text-[8px] font-bold transition-colors cursor-pointer"
+                                          title="Delete highlight"
+                                        >
+                                          DELETE ✕
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
-
-      {/* Quote Extractor & Highlights Drawer */}
-      {isClipboardOpen && (
-        <div className="border-t border-white/5 bg-black/80 p-3 font-mono text-[9px] flex flex-col gap-2 relative">
-          <div className="flex justify-between items-center border-b border-white/5 pb-1.5 select-none">
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveTab("clipboard")}
-                className={`text-[9px] uppercase tracking-wider font-bold transition-colors cursor-pointer ${
-                  activeTab === "clipboard" ? "text-[#a855f7]" : "text-white/40 hover:text-white"
-                }`}
-              >
-                CLIPBOARD
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("highlights")}
-                className={`text-[9px] uppercase tracking-wider font-bold transition-colors cursor-pointer ${
-                  activeTab === "highlights" ? "text-[#a855f7]" : "text-white/40 hover:text-white"
-                }`}
-              >
-                HIGHLIGHTS ({highlights.length})
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsClipboardOpen(false)}
-              className="text-white/40 hover:text-white cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-
-          {activeTab === "clipboard" ? (
-            <>
-              <textarea
-                value={clipboardText}
-                onChange={(e) => setClipboardText(e.target.value)}
-                placeholder="Paste text selected from the document above... then click Spawn Note to drop a linked card."
-                className="w-full h-16 bg-black/80 border border-white/10 text-white p-1.5 rounded outline-none resize-none font-sans text-xs focus:border-[#a855f7]"
-              />
-              <div className="text-[7px] text-white/30 mb-0.5 select-none font-sans">
-                PRO-TIP: SELECT TEXT IN PDF AND PRESS 1, 2 OR 3 TO HIGHLIGHT (0/BACKSPACE TO DELETE).
-              </div>
-              {clipboardText.trim() && (
-                <div
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", clipboardText.trim());
-                    e.dataTransfer.setData("application/x-pdf-source-id", pdf.id);
-                    e.dataTransfer.effectAllowed = "copy";
-                  }}
-                  className="bg-[#a855f7]/20 hover:bg-[#a855f7]/30 border border-[#a855f7]/50 text-white py-1.5 rounded cursor-grab active:cursor-grabbing text-[9px] select-none text-center font-bold tracking-widest transition-all animate-pulse flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(168,85,247,0.3)]"
-                  title="Drag this quote anywhere on the canvas to spawn a note card!"
-                >
-                  <span>✥</span> DRAG QUOTE TO CANVAS
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={handleSpawnClick}
-                disabled={!clipboardText.trim()}
-                className={`py-1 rounded text-center font-bold tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                  justSpawned
-                    ? "bg-green-500 text-black shadow-[0_0_8px_rgba(34,197,94,0.4)]"
-                    : clipboardText.trim()
-                    ? "bg-[#a855f7] text-white hover:bg-[#a855f7]/95"
-                    : "bg-white/5 text-white/20 border border-white/5 cursor-not-allowed"
-                }`}
-              >
-                {justSpawned ? (
-                  <>
-                    <Check size={10} /> LINKED NOTE CREATED
-                  </>
-                ) : (
-                  "SPAWN LINKED INDEX NOTE"
-                )}
-              </button>
-
-              {linkedNotes && linkedNotes.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-1.5">
-                  <span className="text-white/40 select-none uppercase tracking-wider text-[8px] font-bold">SPAWNED QUOTE CARDS ({linkedNotes.length}):</span>
-                  <div className="max-h-24 overflow-y-auto flex flex-col gap-1 pr-1 font-sans">
-                    {linkedNotes.map((note) => {
-                      const cleanText = note.content.replace(/<[^>]*>/g, "").trim() || "Empty note...";
-                      return (
-                        <button
-                          key={note.id}
-                          type="button"
-                          onClick={() => onLocateNote && onLocateNote(note.id)}
-                          className="text-left bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white px-2 py-1.5 rounded text-[10px] truncate transition-colors cursor-pointer flex justify-between items-center gap-1.5"
-                        >
-                          <span className="truncate">{cleanText}</span>
-                          <span className="text-[7px] text-[#00aaff] font-mono shrink-0">LOCATE ⌖</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1 select-none">
-              {Object.keys(highlights.reduce((acc, h) => {
-                const page = h.page_number;
-                if (!acc[page]) acc[page] = [];
-                acc[page].push(h);
-                return acc;
-              }, {})).length === 0 ? (
-                <div className="text-white/30 text-center py-4 select-none">
-                  NO HIGHLIGHTS YET
-                  <div className="text-[7px] mt-1 uppercase font-sans">Select text inside PDF and press 1 (purple), 2 (cyan), or 3 (green)</div>
-                </div>
-              ) : (
-                Object.keys(highlights.reduce((acc, h) => {
-                  const page = h.page_number;
-                  if (!acc[page]) acc[page] = [];
-                  acc[page].push(h);
-                  return acc;
-                }, {}))
-                  .map(Number)
-                  .sort((a, b) => a - b)
-                  .map((page) => {
-                    const pageHighlights = highlights.filter(h => h.page_number === page);
-                    return (
-                      <div key={page} className="flex flex-col gap-1">
-                        <div className="text-[#00aaff] font-bold text-[8px] uppercase tracking-wider select-none border-b border-white/5 pb-0.5 mt-1">
-                          PAGE {page}
-                        </div>
-                        <div className="flex flex-col gap-1.5 font-sans">
-                          {pageHighlights.map((h) => {
-                            let colorBorder = "border-l-2 border-l-[#a855f7] bg-[#a855f7]/5";
-                            if (h.color === "cyan") colorBorder = "border-l-2 border-l-[#00aaff] bg-[#00aaff]/5";
-                            else if (h.color === "green") colorBorder = "border-l-2 border-l-[#22c55e] bg-[#22c55e]/5";
-                            return (
-                              <div
-                                key={h.id}
-                                className={`flex flex-col gap-1.5 p-2 rounded border border-white/5 transition-all hover:border-white/10 ${colorBorder}`}
-                              >
-                                <div className="text-white/90 text-[10px] leading-relaxed font-sans select-text break-words">
-                                  &ldquo;{h.text}&rdquo;
-                                </div>
-                                <div className="flex justify-between items-center gap-1 font-mono text-[8px]">
-                                  <span className="text-[7px] text-white/30 uppercase font-sans">
-                                    {h.color}
-                                  </span>
-                                  <div className="flex gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => setPageNumber(h.page_number)}
-                                      className="bg-white/5 hover:bg-white/10 text-white/80 hover:text-white px-1.5 py-0.5 rounded text-[7px] font-bold transition-colors cursor-pointer flex items-center gap-0.5"
-                                      title="Jump to page"
-                                    >
-                                      JUMP ⌖
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => onSpawnNote && onSpawnNote(pdf.id, h.text)}
-                                      className="bg-[#a855f7]/20 hover:bg-[#a855f7]/30 text-white border border-[#a855f7]/40 px-1.5 py-0.5 rounded text-[7px] font-bold transition-all cursor-pointer flex items-center gap-0.5"
-                                      title="Spawn index note from highlight"
-                                    >
-                                      SPAWN ✥
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteHighlight(h.id)}
-                                      className="bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded text-[7px] font-bold transition-colors cursor-pointer"
-                                      title="Delete highlight"
-                                    >
-                                      DELETE ✕
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Resize handle in bottom-right corner */}
       <div
