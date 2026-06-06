@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Search, Loader2, Sparkles, Terminal, FileText, LayoutGrid, Eye, HelpCircle, Compass, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
+import { Search, Loader2, Sparkles, Terminal, FileText, LayoutGrid, Eye, HelpCircle, Compass, RefreshCw, ZoomIn, ZoomOut, Target } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function SearchModal({
@@ -16,6 +16,13 @@ export default function SearchModal({
   onEnterDrawMode,
   onZoomIn,
   onZoomOut,
+  books = [],
+  notes = [],
+  areas = [],
+  pdfs = [],
+  quotes = [],
+  images = [],
+  onTeleport
 }) {
   const [localIsOpen, setLocalIsOpen] = useState(false);
   const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : localIsOpen;
@@ -124,6 +131,7 @@ export default function SearchModal({
     };
     window.addEventListener("keydown", handleGlobalKeyDown, true);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Autofocus input when modal opens
@@ -146,7 +154,7 @@ export default function SearchModal({
         `https://openlibrary.org/search.json?q=${encodeURIComponent(term)}&limit=8`
       );
       const data = await res.json();
-      const books = data.docs.map((doc) => ({
+      const apiBooks = data.docs.map((doc) => ({
         id: doc.key,
         title: doc.title,
         author: doc.author_name ? doc.author_name[0] : "Unknown Author",
@@ -155,7 +163,7 @@ export default function SearchModal({
           : "",
         isBook: true,
       }));
-      setResults(books);
+      setResults(apiBooks);
     } catch (err) {
       console.error("Open Library Query failed:", err);
     } finally {
@@ -164,7 +172,9 @@ export default function SearchModal({
   };
 
   const handleActionTrigger = (item) => {
-    if (item.isBook) {
+    if (item.isLocal) {
+      if (onTeleport) onTeleport(item.id, item.type);
+    } else if (item.isBook) {
       onAddBook(item);
     } else if (item.action) {
       item.action();
@@ -174,7 +184,7 @@ export default function SearchModal({
     setResults([]);
   };
 
-  // Filter commands or books depending on query
+  // Filter commands, local nodes, or books depending on query
   const getDisplayItems = () => {
     const systemCommands = getSystemCommands();
     if (!query) {
@@ -187,20 +197,107 @@ export default function SearchModal({
       return systemCommands.filter((cmd) => cmd.title.includes(filter) || cmd.subtitle.includes(filter));
     }
 
-    // Otherwise, we are showing book search results
-    // We add an option to query the Open Library database at the top if no results are fetched yet
+    // Filter local nodes matching query
+    const term = query.toLowerCase();
+    
+    const localBooks = books
+      .filter(b => (b.title && b.title.toLowerCase().includes(term)) || (b.author && b.author.toLowerCase().includes(term)))
+      .map(b => ({
+        id: b.id,
+        title: b.title.toUpperCase(),
+        subtitle: `BOOK BY ${b.author ? b.author.toUpperCase() : "UNKNOWN"} [ON CANVAS]`,
+        type: "book",
+        isLocal: true,
+        cover_url: b.cover_url,
+        hotkey: "JUMP"
+      }));
+
+    const localNotes = notes
+      .filter(n => n.content && n.content.toLowerCase().includes(term))
+      .map(n => {
+        const cleanContent = n.content.replace(/<[^>]*>/g, "").trim();
+        return {
+          id: n.id,
+          title: cleanContent.length > 45 ? cleanContent.substring(0, 45).toUpperCase() + "..." : cleanContent.toUpperCase() || "EMPTY INDEX CARD",
+          subtitle: "INDEX CARD NOTE [ON CANVAS]",
+          type: "note",
+          isLocal: true,
+          icon: <FileText size={16} className="text-[#00aaff]" />,
+          hotkey: "JUMP"
+        };
+      });
+
+    const localAreas = areas
+      .filter(a => a.name && a.name.toLowerCase().includes(term))
+      .map(a => ({
+        id: a.id,
+        title: a.name.toUpperCase(),
+        subtitle: "CATEGORY ZONE BOUNDARY [ON CANVAS]",
+        type: "area",
+        isLocal: true,
+        icon: <LayoutGrid size={16} className="text-[#22c55e]" />,
+        hotkey: "JUMP"
+      }));
+
+    const localPdfs = pdfs
+      .filter(p => p.name && p.name.toLowerCase().includes(term))
+      .map(p => ({
+        id: p.id,
+        title: p.name.toUpperCase(),
+        subtitle: "RESEARCH REFERENCE PDF [ON CANVAS]",
+        type: "pdf",
+        isLocal: true,
+        icon: <FileText size={16} className="text-[#a855f7]" />,
+        hotkey: "JUMP"
+      }));
+
+    const localImages = images
+      .filter(img => img.name && img.name.toLowerCase().includes(term))
+      .map(img => ({
+        id: img.id,
+        title: img.name.toUpperCase(),
+        subtitle: "IMPORTED WORKSPACE IMAGE [ON CANVAS]",
+        type: "image",
+        isLocal: true,
+        icon: <Target size={16} className="text-[#00e1ff]" />,
+        hotkey: "JUMP"
+      }));
+
+    const localQuotes = quotes
+      .filter(q => q.quote && q.quote.toLowerCase().includes(term))
+      .map(q => ({
+        id: q.id,
+        title: q.quote.length > 40 ? `“${q.quote.substring(0, 40).toUpperCase()}...”` : `“${q.quote.toUpperCase()}”`,
+        subtitle: "QUOTE FRAGMENT [ON CANVAS]",
+        type: "quote",
+        isLocal: true,
+        icon: <HelpCircle size={16} className="text-yellow-400" />,
+        hotkey: "JUMP"
+      }));
+
+    const localMatches = [...localBooks, ...localNotes, ...localAreas, ...localPdfs, ...localImages, ...localQuotes];
+
+    // If we haven't fetched remote results, we show local matches first, 
+    // then an option to search Open Library, then matching system commands
     if (results.length === 0) {
-      return [
-        {
-          id: "cmd-search-api",
-          title: `QUERY DATABASE FOR: "${query.toUpperCase()}"`,
-          subtitle: "FETCH MATCHING BOOK MODULES FROM OPEN LIBRARY",
-          icon: <RefreshCw size={16} className="text-[#00aaff] animate-spin" />,
-          action: () => searchBooks(query),
-          isTrigger: true,
-        },
-        ...systemCommands.filter((cmd) => cmd.title.includes(query.toUpperCase())),
-      ];
+      const display = [...localMatches];
+      
+      // Open Library search option
+      display.push({
+        id: "cmd-search-api",
+        title: `QUERY OPEN LIBRARY FOR: "${query.toUpperCase()}"`,
+        subtitle: "SEARCH REMOTE ARCHIVE DATABASE FOR COVERS TO ADD",
+        icon: <RefreshCw size={16} className="text-[#00aaff]" />,
+        action: () => searchBooks(query),
+        isTrigger: true,
+        hotkey: "API"
+      });
+
+      // Filtered system commands
+      const matchingCmds = systemCommands.filter((cmd) => cmd.title.includes(query.toUpperCase()));
+      display.push(...matchingCmds);
+      
+      return display;
     }
 
     return results;
@@ -232,7 +329,7 @@ export default function SearchModal({
     <AnimatePresence>
       {isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md"
           onClick={() => setIsOpen(false)}
           onPointerDown={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
@@ -269,7 +366,7 @@ export default function SearchModal({
                     setSelectedIndex(0);
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type > for system commands or search for a book cover..."
+                  placeholder="Type > for system commands or search for a local node or remote cover..."
                   className="aero-input pl-9 pr-4 py-2 text-xs font-mono tracking-wider bg-black/80 border border-white/10 text-white rounded outline-none"
                   autoFocus
                 />
@@ -306,8 +403,9 @@ export default function SearchModal({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {/* Icon / Cover */}
-                      {item.isBook ? (
+                      {item.cover_url || item.isBook ? (
                         item.cover_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img src={item.cover_url} alt={item.title} className="w-7 h-10 object-cover rounded shadow border border-white/10" />
                         ) : (
                           <div className="w-7 h-10 bg-white/10 flex items-center justify-center text-[7px] text-gray-400 rounded">
@@ -332,8 +430,12 @@ export default function SearchModal({
                     </div>
 
                     {/* Hotkey tag / action flag */}
-                    {!item.isBook && item.hotkey && (
-                      <span className="font-mono text-[8px] bg-white/5 text-gray-400 border border-white/10 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    {item.hotkey && (
+                      <span className={`font-mono text-[8px] border px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                        item.hotkey === "JUMP" 
+                          ? "bg-[#00aaff]/15 text-[#00aaff] border-[#00aaff]/35" 
+                          : "bg-white/5 text-gray-400 border-white/10"
+                      }`}>
                         {item.hotkey}
                       </span>
                     )}

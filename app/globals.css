@@ -325,7 +325,26 @@ body {
   stroke-dashoffset: 0 !important;
 }
 
+/* Custom PDF text layer selection highlights */
+.textLayer {
+  mix-blend-mode: multiply;
+  z-index: 2;
+}
+.textLayer ::selection {
+  background: rgba(168, 85, 247, 0.35) !important; /* purple highlight */
+  color: transparent !important;
+}
+.textLayer span {
+  color: transparent !important;
+}
 
+/* Disable pointer events on all iframes and images while dragging/panning the canvas to eliminate drag lag */
+.is-canvas-dragging iframe,
+.is-canvas-dragging img {
+  pointer-events: none !important;
+}
 
-
-
+/* Disable pointer events on all canvas cards, handles, and connections when drawing or lassoing is active */
+.is-drawing-mode .canvas-nodes-container *:not(.drawing-stroke) {
+  pointer-events: none !important;
+}

@@ -9,6 +9,10 @@ export async function GET() {
     const notes = db.prepare('SELECT * FROM notes').all();
     const links = db.prepare('SELECT * FROM links').all();
     const presets = db.prepare('SELECT * FROM presets').all();
+    const pdfs = db.prepare('SELECT * FROM pdfs').all();
+    const pdf_highlights = db.prepare('SELECT * FROM pdf_highlights').all();
+    const drawings = db.prepare('SELECT * FROM drawings').all();
+    const images = db.prepare('SELECT * FROM images').all();
 
     return NextResponse.json({
       version: "1.0.0",
@@ -18,7 +22,11 @@ export async function GET() {
       areas,
       notes,
       links,
-      presets
+      presets,
+      pdfs,
+      pdf_highlights,
+      drawings,
+      images
     });
   } catch (error) {
     console.error('Backup failed:', error);
@@ -34,7 +42,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid backup payload' }, { status: 400 });
     }
 
-    const { books = [], quotes = [], areas = [], notes = [], links = [], presets = [] } = backupData;
+    const hasHighlights = 'pdf_highlights' in backupData;
+    const hasDrawings = 'drawings' in backupData;
+    const hasImages = 'images' in backupData;
+    const { books = [], quotes = [], areas = [], notes = [], links = [], presets = [], pdfs = [] } = backupData;
+    const pdf_highlights = hasHighlights ? backupData.pdf_highlights : [];
+    const drawings = hasDrawings ? backupData.drawings : [];
+    const images = hasImages ? backupData.images : [];
 
     const executeRestore = db.transaction(() => {
       // Clear tables
@@ -44,6 +58,17 @@ export async function POST(request) {
       db.prepare('DELETE FROM areas').run();
       db.prepare('DELETE FROM books').run();
       db.prepare('DELETE FROM presets').run();
+      db.prepare('DELETE FROM pdfs').run();
+      db.prepare('DELETE FROM images').run();
+      if (hasHighlights) {
+        db.prepare('DELETE FROM pdf_highlights').run();
+      }
+      if (hasDrawings) {
+        db.prepare('DELETE FROM drawings').run();
+      }
+      if (hasImages) {
+        db.prepare('DELETE FROM images').run();
+      }
 
       // Insert books
       const insertBook = db.prepare(`
@@ -119,8 +144,8 @@ export async function POST(request) {
 
       // Insert links
       const insertLink = db.prepare(`
-        INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, created_at)
-        VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @created_at)
+        INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, color, created_at)
+        VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @color, @created_at)
       `);
       links.forEach(l => {
         insertLink.run({
@@ -134,6 +159,7 @@ export async function POST(request) {
           arrow: l.arrow || 'none',
           speed: l.speed || 'normal',
           shape: l.shape || 'curved',
+          color: l.color !== undefined ? l.color : null,
           created_at: l.created_at || new Date().toISOString()
         });
       });
@@ -153,6 +179,81 @@ export async function POST(request) {
           created_at: p.created_at || new Date().toISOString()
         });
       });
+
+      // Insert pdfs
+      const insertPdf = db.prepare(`
+        INSERT INTO pdfs (id, name, filename, x_pos, y_pos, width, height, created_at)
+        VALUES (@id, @name, @filename, @x_pos, @y_pos, @width, @height, @created_at)
+      `);
+      pdfs.forEach(pdf => {
+        insertPdf.run({
+          id: pdf.id,
+          name: pdf.name,
+          filename: pdf.filename,
+          x_pos: pdf.x_pos || 0,
+          y_pos: pdf.y_pos || 0,
+          width: pdf.width || 450,
+          height: pdf.height || 600,
+          created_at: pdf.created_at || new Date().toISOString()
+        });
+      });
+
+      // Insert pdf_highlights
+      if (hasHighlights) {
+        const insertHighlight = db.prepare(`
+          INSERT INTO pdf_highlights (id, pdf_id, page_number, start_offset, end_offset, text, color, created_at)
+          VALUES (@id, @pdf_id, @page_number, @start_offset, @end_offset, @text, @color, @created_at)
+        `);
+        pdf_highlights.forEach(h => {
+          insertHighlight.run({
+            id: h.id,
+            pdf_id: h.pdf_id,
+            page_number: h.page_number || 1,
+            start_offset: h.start_offset,
+            end_offset: h.end_offset,
+            text: h.text,
+            color: h.color,
+            created_at: h.created_at || new Date().toISOString()
+          });
+        });
+      }
+
+      // Insert drawings
+      if (hasDrawings) {
+        const insertDrawing = db.prepare(`
+          INSERT INTO drawings (id, path_data, color, stroke_width, created_at)
+          VALUES (@id, @path_data, @color, @stroke_width, @created_at)
+        `);
+        drawings.forEach(d => {
+          insertDrawing.run({
+            id: d.id,
+            path_data: d.path_data,
+            color: d.color || '#00aaff',
+            stroke_width: d.stroke_width || 4,
+            created_at: d.created_at || new Date().toISOString()
+          });
+        });
+      }
+
+      // Insert images
+      if (hasImages) {
+        const insertImage = db.prepare(`
+          INSERT INTO images (id, name, filename, x_pos, y_pos, width, height, created_at)
+          VALUES (@id, @name, @filename, @x_pos, @y_pos, @width, @height, @created_at)
+        `);
+        images.forEach(img => {
+          insertImage.run({
+            id: img.id,
+            name: img.name,
+            filename: img.filename,
+            x_pos: img.x_pos || 0,
+            y_pos: img.y_pos || 0,
+            width: img.width || 300,
+            height: img.height || 300,
+            created_at: img.created_at || new Date().toISOString()
+          });
+        });
+      }
     });
 
     executeRestore();

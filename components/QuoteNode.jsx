@@ -1,7 +1,10 @@
 "use client";
+import { memo } from "react";
 
-export default function QuoteNode({ quote, onDragStart, onDelete, isSelected }) {
+function QuoteNode({ quote, onDragStart, onDelete, isSelected, isPinned }) {
   const handlePointerDown = (e) => {
+    if (e.shiftKey) return;
+    if (isPinned) return;
     e.stopPropagation();
     onDragStart(quote.id, "quote", e.clientX, e.clientY, e.currentTarget, e.pointerId);
   };
@@ -13,7 +16,11 @@ export default function QuoteNode({ quote, onDragStart, onDelete, isSelected }) 
 
   return (
     <div
-      className={`absolute max-w-xs aero-panel p-3 text-white text-sm italic font-sans cursor-grab active:cursor-grabbing border-l-2 border-l-[#00aaff] ${
+      data-node-id={quote.id}
+      data-node-type="quote"
+      className={`absolute max-w-xs aero-panel p-3 text-white text-sm italic font-sans border-l-2 border-l-[#00aaff] ${
+        isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      } ${
         isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
       style={{ 
@@ -25,7 +32,10 @@ export default function QuoteNode({ quote, onDragStart, onDelete, isSelected }) 
       onPointerDown={handlePointerDown}
     >
       <div className="flex justify-between items-start gap-4 mb-2">
-        <div className="hud-text opacity-50">Quote Fragment</div>
+        <div className="hud-text opacity-50 flex items-center gap-1">
+          {isPinned && <span className="text-[9px]" title="Position Locked">📌</span>}
+          <span>Quote Fragment</span>
+        </div>
         <button
           id={`delete-quote-btn-${quote.id}`}
           type="button"
@@ -39,3 +49,5 @@ export default function QuoteNode({ quote, onDragStart, onDelete, isSelected }) 
     </div>
   );
 }
+
+export default memo(QuoteNode);

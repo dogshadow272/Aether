@@ -50,3 +50,27 @@ export async function DELETE(request) {
     return NextResponse.json({ error: 'Failed to delete preset' }, { status: 500 });
   }
 }
+
+export async function PUT(request) {
+  try {
+    const data = await request.json();
+    if (!data.id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
+
+    const stmt = db.prepare(`
+      UPDATE presets
+      SET name = @name
+      WHERE id = @id
+    `);
+
+    stmt.run({
+      id: data.id,
+      name: data.name
+    });
+
+    const updatedPreset = db.prepare('SELECT * FROM presets WHERE id = ?').get(data.id);
+    return NextResponse.json(updatedPreset);
+  } catch (error) {
+    console.error('Failed to update preset:', error);
+    return NextResponse.json({ error: 'Failed to update preset' }, { status: 500 });
+  }
+}

@@ -1,0 +1,441 @@
+
+/Users/shivreshi/Documents/Book Review/app/test/page.js
+  252:6  warning  React Hook useEffect has a missing dependency: 'runSuite'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/shivreshi/Documents/Book Review/components/BookNode.jsx
+  117:11  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/shivreshi/Documents/Book Review/components/Canvas.jsx
+  1359:37  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  1357 |   }, [toast]);
+  1358 |
+> 1359 |   const togglePinNode = useCallback((id) => {
+       |                                     ^^^^^^^^^
+> 1360 |     setPinnedNodeIds((prev) => {
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1361 |       const next = new Set(prev);
+       …
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1370 |     });
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1371 |   }, [showToast]);
+       | ^^^^ Could not preserve existing memoization
+  1372 |
+  1373 |   const restoreSnapshot = useCallback(async (state) => {
+  1374 |     try {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  react-hooks/preserve-manual-memoization
+  1371:7   error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  1369 |       return next;
+  1370 |     });
+> 1371 |   }, [showToast]);
+       |       ^^^^^^^^^ This dependency may be modified later
+  1372 |
+  1373 |   const restoreSnapshot = useCallback(async (state) => {
+  1374 |     try {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               react-hooks/preserve-manual-memoization
+  1373:39  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setPdfs`, but the source dependencies were []. Inferred dependency not present in source.
+
+  1371 |   }, [showToast]);
+  1372 |
+> 1373 |   const restoreSnapshot = useCallback(async (state) => {
+       |                                       ^^^^^^^^^^^^^^^^^^
+> 1374 |     try {
+       | ^^^^^^^^^
+> 1375 |       const res = await fetch("/api/backup", {
+       …
+       | ^^^^^^^^^
+> 1393 |     }
+       | ^^^^^^^^^
+> 1394 |   }, []);
+       | ^^^^ Could not preserve existing manual memoization
+  1395 |
+  1396 |   const performUndo = useCallback(async () => {
+  1397 |     if (undoStackRef.current.length === 0) return;                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/preserve-manual-memoization
+  1415:6   warning  React Hook useCallback has a missing dependency: 'showToast'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/exhaustive-deps
+  1436:6   warning  React Hook useCallback has a missing dependency: 'showToast'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/exhaustive-deps
+  1440:5   error    Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+  1438 |   useEffect(() => {
+  1439 |     connectionSourceRef.current = connectionSource;
+> 1440 |     booksRef.current = books;
+       |     ^^^^^^^^ `booksRef` cannot be modified
+  1441 |     quotesRef.current = quotes;
+  1442 |     areasRef.current = areas;
+  1443 |     notesRef.current = notes;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             react-hooks/immutability
+  1441:5   error    Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+  1439 |     connectionSourceRef.current = connectionSource;
+  1440 |     booksRef.current = books;
+> 1441 |     quotesRef.current = quotes;
+       |     ^^^^^^^^^ `quotesRef` cannot be modified
+  1442 |     areasRef.current = areas;
+  1443 |     notesRef.current = notes;
+  1444 |     linksRef.current = links;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/immutability
+  1442:5   error    Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+  1440 |     booksRef.current = books;
+  1441 |     quotesRef.current = quotes;
+> 1442 |     areasRef.current = areas;
+       |     ^^^^^^^^ `areasRef` cannot be modified
+  1443 |     notesRef.current = notes;
+  1444 |     linksRef.current = links;
+  1445 |     selectedNodesRef.current = selectedNodes;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/immutability
+  1443:5   error    Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+  1441 |     quotesRef.current = quotes;
+  1442 |     areasRef.current = areas;
+> 1443 |     notesRef.current = notes;
+       |     ^^^^^^^^ `notesRef` cannot be modified
+  1444 |     linksRef.current = links;
+  1445 |     selectedNodesRef.current = selectedNodes;
+  1446 |     pdfsRef.current = pdfs;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/immutability
+  1446:5   error    Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+  1444 |     linksRef.current = links;
+  1445 |     selectedNodesRef.current = selectedNodes;
+> 1446 |     pdfsRef.current = pdfs;
+       |     ^^^^^^^ `pdfsRef` cannot be modified
+  1447 |     drawingsRef.current = drawings;
+  1448 |     imagesRef.current = images;
+  1449 |   }, [connectionSource, books, quotes, areas, notes, links, selectedNodes, pdfs, drawings, images]);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                react-hooks/immutability
+  1544:42  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  1542 |   };
+  1543 |
+> 1544 |   const handleDeleteStroke = useCallback(async (id) => {
+       |                                          ^^^^^^^^^^^^^^^
+> 1545 |     saveStateBeforeMutation();
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1546 |     try {
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1547 |       setDrawings((prev) => prev.filter((d) => d.id !== id));
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1548 |       await fetch(`/api/drawings?id=${id}`, { method: "DELETE" });
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1549 |     } catch (err) {
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1550 |       console.error("Failed to delete drawing stroke:", err);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1551 |     }
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1552 |   }, [saveStateBeforeMutation]);
+       | ^^^^ Could not preserve existing memoization
+  1553 |
+  1554 |   useEffect(() => {
+  1555 |     /* eslint-disable react-hooks/set-state-in-effect */                                                                                                                                                                  react-hooks/preserve-manual-memoization
+  1552:7   error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  1550 |       console.error("Failed to delete drawing stroke:", err);
+  1551 |     }
+> 1552 |   }, [saveStateBeforeMutation]);
+       |       ^^^^^^^^^^^^^^^^^^^^^^^ This dependency may be modified later
+  1553 |
+  1554 |   useEffect(() => {
+  1555 |     /* eslint-disable react-hooks/set-state-in-effect */                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                react-hooks/preserve-manual-memoization
+  2027:40  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  2025 |   };
+  2026 |
+> 2027 |   const handleUpdateBook = useCallback(async (updatedBook, skipHistory = false) => {
+       |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 2028 |     if (!skipHistory) saveStateBeforeMutation();
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 2029 |     try {
+       …
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 2039 |     }
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 2040 |   }, [saveStateBeforeMutation]);
+       | ^^^^ Could not preserve existing memoization
+  2041 |
+  2042 |   const handleExtractQuote = async (bookId, text) => {
+  2043 |     saveStateBeforeMutation();                                                                                                                                                                                                                                                                                                                                                                                                                                       react-hooks/preserve-manual-memoization
+  2040:7   error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  2038 |       console.error(err);
+  2039 |     }
+> 2040 |   }, [saveStateBeforeMutation]);
+       |       ^^^^^^^^^^^^^^^^^^^^^^^ This dependency may be modified later
+  2041 |
+  2042 |   const handleExtractQuote = async (bookId, text) => {
+  2043 |     saveStateBeforeMutation();                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/preserve-manual-memoization
+  4320:6   warning  React Hook useEffect has missing dependencies: 'handleCreateNote' and 'showToast'. Either include them or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/exhaustive-deps
+  4479:25  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4477 |   }, []);
+  4478 |
+> 4479 |   const filteredBooks = useMemo(() => {
+       |                         ^^^^^^^^^^^^^^^
+> 4480 |     return books.filter(b => 
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4481 |       filters.showBooks && 
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4482 |       ((b.status === "To Read" && filters.statusToRead) ||
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4483 |        (b.status === "Reading" && filters.statusReading) ||
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4484 |        (b.status === "Completed" && filters.statusCompleted)) &&
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4485 |       (b.rating >= filters.minRating) &&
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4486 |       (!filters.showOnlyOrphans || !links.some(l => l.source_id === b.id || l.target_id === b.id))
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4487 |     );
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4488 |   }, [books, filters, links]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4489 |
+  4490 |   const filteredNotes = useMemo(() => {
+  4491 |     return notes.filter(n =>   react-hooks/preserve-manual-memoization
+  4490:25  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4488 |   }, [books, filters, links]);
+  4489 |
+> 4490 |   const filteredNotes = useMemo(() => {
+       |                         ^^^^^^^^^^^^^^^
+> 4491 |     return notes.filter(n => 
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4492 |       filters.showNotes &&
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4493 |       (!filters.showOnlyOrphans || !links.some(l => l.source_id === n.id || l.target_id === n.id))
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4494 |     );
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4495 |   }, [notes, filters, links]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4496 |
+  4497 |   const filteredPdfs = useMemo(() => {
+  4498 |     return pdfs.filter(p =>                                                                                                                                                                                                                                                                                                                                                                                                                  react-hooks/preserve-manual-memoization
+  4497:24  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4495 |   }, [notes, filters, links]);
+  4496 |
+> 4497 |   const filteredPdfs = useMemo(() => {
+       |                        ^^^^^^^^^^^^^^^
+> 4498 |     return pdfs.filter(p => 
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4499 |       filters.showPdfs &&
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4500 |       (!filters.showOnlyOrphans || !links.some(l => l.source_id === p.id || l.target_id === p.id))
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4501 |     );
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4502 |   }, [pdfs, filters, links]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4503 |
+  4504 |   const filteredImages = useMemo(() => {
+  4505 |     return images.filter(img =>                                                                                                                                                                                                                                                                                                                                                                                                                      react-hooks/preserve-manual-memoization
+  4504:26  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4502 |   }, [pdfs, filters, links]);
+  4503 |
+> 4504 |   const filteredImages = useMemo(() => {
+       |                          ^^^^^^^^^^^^^^^
+> 4505 |     return images.filter(img => 
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4506 |       filters.showImages &&
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4507 |       (!filters.showOnlyOrphans || !links.some(l => l.source_id === img.id || l.target_id === img.id))
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4508 |     );
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4509 |   }, [images, filters, links]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4510 |
+  4511 |   const filteredAreas = useMemo(() => {
+  4512 |     return areas.filter(a =>                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/preserve-manual-memoization
+  4511:25  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4509 |   }, [images, filters, links]);
+  4510 |
+> 4511 |   const filteredAreas = useMemo(() => {
+       |                         ^^^^^^^^^^^^^^^
+> 4512 |     return areas.filter(a => 
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4513 |       filters.showAreas &&
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4514 |       (!filters.showOnlyOrphans || !links.some(l => l.source_id === a.id || l.target_id === a.id))
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4515 |     );
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4516 |   }, [areas, filters, links]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4517 |
+  4518 |   const filteredQuotes = useMemo(() => {
+  4519 |     return quotes.filter(q => {                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/preserve-manual-memoization
+  4518:26  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4516 |   }, [areas, filters, links]);
+  4517 |
+> 4518 |   const filteredQuotes = useMemo(() => {
+       |                          ^^^^^^^^^^^^^^^
+> 4519 |     return quotes.filter(q => {
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4520 |       if (!filters.showQuotes) return false;
+       …
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4532 |     });
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4533 |   }, [quotes, books, filters, links]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4534 |
+  4535 |   const filteredLinks = useMemo(() => {
+  4536 |     return links.filter(l => {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/preserve-manual-memoization
+  4535:25  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+  4533 |   }, [quotes, books, filters, links]);
+  4534 |
+> 4535 |   const filteredLinks = useMemo(() => {
+       |                         ^^^^^^^^^^^^^^^
+> 4536 |     return links.filter(l => {
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4537 |       const sourceExists = 
+       …
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4554 |     });
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Could not preserve existing memoization
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                          react-hooks/preserve-manual-memoization
+  4555:14  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  4553 |       return sourceExists && targetExists;
+  4554 |     });
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       |              ^^^^^^^^^^^^^ This dependency may be modified later
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       react-hooks/preserve-manual-memoization
+  4555:29  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  4553 |       return sourceExists && targetExists;
+  4554 |     });
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       |                             ^^^^^^^^^^^^^ This dependency may be modified later
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/preserve-manual-memoization
+  4555:44  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  4553 |       return sourceExists && targetExists;
+  4554 |     });
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       |                                            ^^^^^^^^^^^^ This dependency may be modified later
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          react-hooks/preserve-manual-memoization
+  4555:58  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  4553 |       return sourceExists && targetExists;
+  4554 |     });
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       |                                                          ^^^^^^^^^^^^^^ This dependency may be modified later
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          react-hooks/preserve-manual-memoization
+  4555:74  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  4553 |       return sourceExists && targetExists;
+  4554 |     });
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       |                                                                          ^^^^^^^^^^^^^ This dependency may be modified later
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/preserve-manual-memoization
+  4555:89  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+  4553 |       return sourceExists && targetExists;
+  4554 |     });
+> 4555 |   }, [links, filteredBooks, filteredNotes, filteredPdfs, filteredImages, filteredAreas, filteredQuotes]);
+       |                                                                                         ^^^^^^^^^^^^^^ This dependency may be modified later
+  4556 |
+  4557 |   const getIsHoveredOrConnected = useCallback((id, type) => {
+  4558 |     if (!hoveredNode) return true;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/preserve-manual-memoization
+
+/Users/shivreshi/Documents/Book Review/components/ImageNode.jsx
+  115:11  warning  Image elements must have an alt prop, either with meaningful text, or an empty string for decorative images                                                                                                                                                                              jsx-a11y/alt-text
+  155:9   warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/shivreshi/Documents/Book Review/components/PdfNode.jsx
+   45:5   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  43 |
+  44 |   useEffect(() => {
+> 45 |     fetchHighlights();
+     |     ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  46 |   }, [fetchHighlights]);
+  47 |
+  48 |   // Listen to message events from the iframe to update state  react-hooks/set-state-in-effect
+  466:35  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               react/no-unescaped-entities
+  466:44  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               react/no-unescaped-entities
+
+/Users/shivreshi/Documents/Book Review/components/ReviewModal.jsx
+  172:17  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/shivreshi/Documents/Book Review/components/SearchModal.jsx
+  134:6   warning  React Hook useEffect has a missing dependency: 'setIsOpen'. Either include it or remove the dependency array                                                                                                                                                                             react-hooks/exhaustive-deps
+  407:27  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/shivreshi/Documents/Book Review/postcss.config.mjs
+  1:1  warning  Assign object to a variable before exporting as module default  import/no-anonymous-default-export
+
+✖ 39 problems (28 errors, 11 warnings)
+

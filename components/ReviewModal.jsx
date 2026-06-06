@@ -169,6 +169,7 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
           <div className="w-72 border-r border-r-white/10 p-6 flex flex-col gap-6 bg-black/30 overflow-y-auto">
             <div>
               {book.cover_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={book.cover_url}
                   alt={book.title}

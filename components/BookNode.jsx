@@ -1,9 +1,11 @@
 "use client";
-import { useRef } from "react";
+import { useRef, memo } from "react";
 import { Link, Eye } from "lucide-react";
 
-export default function BookNode({ book, onDragStart, onStartConnection, isFocused, onToggleFocus, isHighlighted, isSelected }) {
+function BookNode({ book, onDragStart, onStartConnection, isFocused, onToggleFocus, isHighlighted, isSelected, isPinned }) {
   const handlePointerDown = (e) => {
+    if (e.shiftKey) return;
+    if (isPinned) return;
     // If clicking a handle, don't drag
     if (e.target.closest(".connector-handle")) return;
     e.stopPropagation();
@@ -14,8 +16,10 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
     <div
       data-node-id={book.id}
       data-node-type="book"
-      className={`absolute aero-panel w-48 cursor-grab active:cursor-grabbing group transition-shadow duration-300 ${
-        isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+      className={`absolute aero-panel w-48 group transition-shadow duration-300 ${
+        isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      } ${
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
       } ${
         isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
@@ -29,7 +33,7 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
       onDoubleClick={(e) => {
         if (e.target.closest("button")) return;
         e.stopPropagation();
-        if (onToggleFocus) onToggleFocus(true);
+        if (onToggleFocus) onToggleFocus(book.id, "book", true);
       }}
     >
       {/* Miro-style Connection Handles */}
@@ -74,7 +78,8 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
         </>
       )}
       <div className="aero-header flex justify-between items-center">
-        <div className="hud-text truncate text-[10px]">
+        <div className="hud-text truncate text-[10px] flex items-center gap-1">
+          {isPinned && <span className="text-[9px]" title="Position Locked">📌</span>}
           ID: {book.id.substring(0, 8)}
         </div>
         <div className="flex items-center gap-1.5">
@@ -96,7 +101,7 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleFocus();
+                onToggleFocus(book.id, "book", false);
               }}
               className={`transition-colors p-0.5 mr-1 flex items-center justify-center ${
                 isFocused ? "text-purple-400 drop-shadow-[0_0_6px_rgba(168,85,247,0.7)] scale-110" : "text-white/40 hover:text-purple-400"
@@ -110,6 +115,7 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
       </div>
       <div className="p-3 relative group">
         {book.cover_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={book.cover_url}
             alt={book.title}
@@ -140,3 +146,5 @@ export default function BookNode({ book, onDragStart, onStartConnection, isFocus
     </div>
   );
 }
+
+export default memo(BookNode);

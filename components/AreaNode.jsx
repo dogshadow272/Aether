@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { Eye, LayoutGrid } from "lucide-react";
 
 const getColorClass = (rgba) => {
@@ -20,12 +20,14 @@ const getColorHex = (rgba) => {
   return "#00aaff";
 };
 
-export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArrangeNodes, booksCount = 0, completedCount = 0, isFocused, onToggleFocus, isHighlighted, isSelected }) {
+function AreaNode({ area, onDragStart, onResizeStart, onDelete, onRename, onArrangeNodes, booksCount = 0, completedCount = 0, isFocused, onToggleFocus, isHighlighted, isSelected, isPinned }) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(area.name);
   const inputRef = useRef(null);
 
   const handlePointerDownDrag = (e) => {
+    if (e.shiftKey) return;
+    if (isPinned) return;
     if (e.target.closest("button") || e.target.closest("input")) return;
     e.stopPropagation();
     onDragStart(area.id, "area", e.clientX, e.clientY, e.currentTarget.parentElement, e.pointerId);
@@ -62,8 +64,10 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
 
   return (
     <div
+      data-node-id={area.id}
+      data-node-type="area"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto ${getColorClass(area.color)} ${
-        isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
       } ${
         isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
@@ -83,12 +87,14 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
       }}
     >
       <div
-        className="px-3 py-1.5 border-b border-white/5 bg-black/30 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-lg select-none"
+        className={`px-3 py-1.5 border-b border-white/5 bg-black/30 flex items-center justify-between rounded-t-lg select-none ${
+          isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+        }`}
         onPointerDown={handlePointerDownDrag}
         onDoubleClick={(e) => {
           if (e.target.closest("input") || e.target.closest(".hud-text")) return;
           e.stopPropagation();
-          if (onToggleFocus) onToggleFocus(true);
+          if (onToggleFocus) onToggleFocus(area.id, "area", true);
         }}
       >
         <div className="flex items-center gap-2 max-w-[80%]">
@@ -108,6 +114,7 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
               className="hud-text text-white font-semibold truncate cursor-text flex items-center gap-1.5"
               title="Double-click to rename"
             >
+              {isPinned && <span className="text-[9px]" title="Position Locked">📌</span>}
               <span>{area.name}</span>
               {booksCount > 0 && (
                 <span className="text-[8px] font-mono opacity-50 font-normal normal-case">
@@ -161,7 +168,7 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleFocus();
+                onToggleFocus(area.id, "area", false);
               }}
               className={`transition-colors p-1 flex items-center justify-center ${
                 isFocused ? "text-purple-400 drop-shadow-[0_0_6px_rgba(168,85,247,0.7)] scale-110" : "text-white/40 hover:text-purple-400"
@@ -208,3 +215,5 @@ export default function AreaNode({ area, onDragStart, onResizeStart, onDelete, o
     </div>
   );
 }
+
+export default memo(AreaNode);

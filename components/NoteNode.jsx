@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Bold, Italic, Underline, List, ListOrdered, Link, Eye } from "lucide-react";
 import { handleContentEditableKeyDown } from "../lib/editorHelpers";
 
@@ -94,7 +94,23 @@ const getColorClass = (rgba) => {
   return "theme-glow-blue";
 };
 
-export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, onEdit, onStartConnection, isFocused, onToggleFocus, isHighlighted, isSelected }) {
+function NoteNode({
+  note,
+  onDragStart,
+  onResizeStart,
+  onDelete,
+  onEdit,
+  onStartConnection,
+  isFocused,
+  onToggleFocus,
+  isHighlighted,
+  isSelected,
+  isPinned,
+  initiallyEditing,
+  onEditingStarted,
+  onTabOut,
+  onArrowNavigation
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(note.content);
   const [prevNoteContent, setPrevNoteContent] = useState(note.content);
@@ -152,7 +168,41 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
     return () => window.removeEventListener("pointerdown", handleWindowClick);
   }, [isEditing, handleEditSubmit]);
 
+  // Handle auto-focus and initial editing when requested by Canvas
+  useEffect(() => {
+    if (initiallyEditing) {
+      const timer = setTimeout(() => {
+        setIsEditing(true);
+        if (onEditingStarted) {
+          onEditingStarted(note.id);
+        }
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [initiallyEditing, note.id, onEditingStarted]);
+
+  // Focus the editor when it is opened
+  useEffect(() => {
+    if (isEditing) {
+      const timer = setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.focus();
+          // Move caret to end
+          const range = document.createRange();
+          const sel = window.getSelection();
+          range.selectNodeContents(editorRef.current);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isEditing]);
+
   const handlePointerDownDrag = (e) => {
+    if (e.shiftKey) return;
+    if (isPinned) return;
     if (e.target.closest("button") || e.target.closest("[contenteditable]")) return;
     e.stopPropagation();
     onDragStart(note.id, "note", e.clientX, e.clientY, cardRef.current, e.pointerId);
@@ -160,18 +210,6 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
 
   const handleDoubleClick = () => {
     setIsEditing(true);
-    setTimeout(() => {
-      if (editorRef.current) {
-        editorRef.current.focus();
-        // Move caret to end
-        const range = document.createRange();
-        const sel = window.getSelection();
-        range.selectNodeContents(editorRef.current);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    }, 100);
   };
 
 
@@ -198,6 +236,24 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
       return;
     }
 
+    if (e.key === "Tab") {
+      e.preventDefault();
+      handleEditSubmit();
+      if (onTabOut) {
+        onTabOut(note.id);
+      }
+      return;
+    }
+
+    if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      handleEditSubmit();
+      if (onArrowNavigation) {
+        onArrowNavigation(note.id, e.key);
+      }
+      return;
+    }
+
     const handled = handleContentEditableKeyDown(e, (newHTML) => {
       setContent(newHTML);
     });
@@ -210,7 +266,7 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
       data-node-id={note.id}
       data-node-type="note"
       className={`absolute border rounded-lg flex flex-col pointer-events-auto aero-panel group transition-shadow duration-300 ${getColorClass(note.color)} ${
-        isHighlighted ? "animate-pulse ring-4 ring-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.5)] border-[#a855f7]! z-40" : ""
+        isHighlighted ? "ring-2 ring-purple-500 border-purple-500! z-40" : ""
       } ${
         isSelected ? "ring-2 ring-[#00aaff] shadow-[0_0_15px_rgba(0,170,255,0.4)] border-[#00aaff]! z-40" : ""
       }`}
@@ -225,7 +281,10 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
         zIndex: 10,
         transition: "border-color 0.2s, box-shadow 0.2s",
       }}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        if (e.shiftKey) return;
+        e.stopPropagation();
+      }}
       onWheel={(e) => e.stopPropagation()}
     >
       {/* Miro-style Connection Handles */}
@@ -271,15 +330,18 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
       )}
       {/* Header (Drag area) */}
       <div 
-        className="px-3 py-1.5 border-b border-white/5 bg-white/5 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-lg select-none"
+        className={`px-3 py-1.5 border-b border-white/5 bg-white/5 flex items-center justify-between rounded-t-lg select-none ${
+          isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+        }`}
         onPointerDown={handlePointerDownDrag}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          if (onToggleFocus) onToggleFocus(true);
+          if (onToggleFocus) onToggleFocus(note.id, "note", true);
         }}
         style={{ touchAction: "none" }}
       >
         <div className="hud-text text-white font-semibold flex items-center gap-2">
+          {isPinned && <span className="text-[9px]" title="Position Locked">📌</span>}
           <span>INDEX_CARD // NOTE</span>
           
           {/* Color palette selector */}
@@ -339,7 +401,7 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleFocus();
+                onToggleFocus(note.id, "note", false);
               }}
               className={`transition-colors p-1 flex items-center justify-center ${
                 isFocused ? "text-purple-400 drop-shadow-[0_0_6px_rgba(168,85,247,0.7)] scale-110" : "text-white/40 hover:text-purple-400"
@@ -499,3 +561,5 @@ export default function NoteNode({ note, onDragStart, onResizeStart, onDelete, o
     </div>
   );
 }
+
+export default memo(NoteNode);

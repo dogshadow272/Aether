@@ -7,13 +7,13 @@ const selectNotesStmt = db.prepare('SELECT * FROM notes');
 const selectNoteByIdStmt = db.prepare('SELECT * FROM notes WHERE id = ?');
 
 const insertNoteStmt = db.prepare(`
-  INSERT INTO notes (id, content, x_pos, y_pos, width, height, color, wrap_text)
-  VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @color, @wrap_text)
+  INSERT INTO notes (id, content, x_pos, y_pos, width, height, z_index, color, wrap_text)
+  VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @z_index, @color, @wrap_text)
 `);
 
 const updateNoteStmt = db.prepare(`
   UPDATE notes
-  SET content = @content, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, color = @color, wrap_text = @wrap_text
+  SET content = @content, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, z_index = @z_index, color = @color, wrap_text = @wrap_text
   WHERE id = @id
 `);
 
@@ -41,6 +41,7 @@ export async function POST(request) {
       y_pos: data.y_pos || 0,
       width: data.width || 220,
       height: data.height || 150,
+      z_index: data.z_index || 0,
       color: data.color || 'rgba(255, 255, 255, 0.08)',
       wrap_text: data.wrap_text !== undefined ? (data.wrap_text ? 1 : 0) : 1
     });
@@ -57,7 +58,7 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     const data = await request.json();
-    const { id, content, x_pos, y_pos, width, height, color, wrap_text } = data;
+    const { id, content, x_pos, y_pos, width, height, z_index, color, wrap_text } = data;
     
     updateNoteStmt.run({
       id,
@@ -66,6 +67,7 @@ export async function PUT(request) {
       y_pos,
       width,
       height,
+      z_index: z_index || 0,
       color,
       wrap_text: wrap_text !== undefined ? (wrap_text ? 1 : 0) : 1
     });
