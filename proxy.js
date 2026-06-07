@@ -5,6 +5,7 @@ export function proxy(request) {
   if (isProd) {
     const host = request.headers.get('host') || '';
     const isLocal = host.includes('localhost') || host.includes('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.');
+    const isVercel = process.env.VERCEL === '1' || host.includes('vercel.app');
     
     const url = request.nextUrl.clone();
     
@@ -16,10 +17,10 @@ export function proxy(request) {
       );
     }
     
-    // Restrict other /api routes in production if not accessed locally
-    if (url.pathname.startsWith('/api') && !isLocal) {
+    // Restrict other /api routes in production if not accessed locally or on Vercel
+    if (url.pathname.startsWith('/api') && !isLocal && !isVercel) {
       return new NextResponse(
-        JSON.stringify({ error: 'Access Denied: Production API is restricted to local access.' }),
+        JSON.stringify({ error: 'Access Denied: Production API is restricted to local or Vercel access.' }),
         { status: 403, headers: { 'Content-Type': 'application/json' } }
       );
     }
