@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export function middleware(request) {
+export function proxy(request) {
   const isProd = process.env.NODE_ENV === 'production';
   if (isProd) {
     const host = request.headers.get('host') || '';
