@@ -479,7 +479,11 @@ function PdfNode({
                             <button
                               key={note.id}
                               type="button"
-                              onClick={() => onLocateNote && onLocateNote(note.id)}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                if (onLocateNote) onLocateNote(note.id);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
                               className="text-left bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white px-2.5 py-2 rounded-md text-[10px] truncate transition-all duration-150 cursor-pointer flex justify-between items-center gap-2"
                             >
                               <span className="truncate">{cleanText}</span>

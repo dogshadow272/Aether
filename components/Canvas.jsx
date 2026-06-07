@@ -641,10 +641,11 @@ export default function Canvas() {
   const handleBulkArrangeGrid = async () => {
     saveStateBeforeMutation();
     const booksToArrange = selectedNodes.filter(n => n.type === "book");
+    const moviesToArrange = selectedNodes.filter(n => n.type === "movie");
     const notesToArrange = selectedNodes.filter(n => n.type === "note");
     const pdfsToArrange = selectedNodes.filter(n => n.type === "pdf");
     const imagesToArrange = selectedNodes.filter(n => n.type === "image");
-    const totalToArrange = [...booksToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
+    const totalToArrange = [...booksToArrange, ...moviesToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
 
     if (totalToArrange.length === 0) return;
 
@@ -654,6 +655,8 @@ export default function Canvas() {
     totalToArrange.forEach(sel => {
       const item = sel.type === "book"
         ? booksRef.current.find(b => b.id === sel.id)
+        : sel.type === "movie"
+        ? moviesRef.current.find(m => m.id === sel.id)
         : sel.type === "pdf"
         ? pdfsRef.current.find(p => p.id === sel.id)
         : sel.type === "image"
@@ -673,7 +676,7 @@ export default function Canvas() {
     const cols = Math.ceil(Math.sqrt(totalToArrange.length));
     const hSpacing = 280;
     const vSpacing = 380;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
 
     totalToArrange.forEach((sel, index) => {
       const r = Math.floor(index / cols);
@@ -686,6 +689,12 @@ export default function Canvas() {
         if (book) {
           setBooks(prev => prev.map(b => b.id === book.id ? { ...b, x_pos: targetX, y_pos: targetY } : b));
           batch.books.push({ id: book.id, x_pos: targetX, y_pos: targetY });
+        }
+      } else if (sel.type === "movie") {
+        const movie = moviesRef.current.find(m => m.id === sel.id);
+        if (movie) {
+          setMovies(prev => prev.map(m => m.id === movie.id ? { ...m, x_pos: targetX, y_pos: targetY } : m));
+          batch.movies.push({ id: movie.id, x_pos: targetX, y_pos: targetY });
         }
       } else if (sel.type === "note") {
         const note = notesRef.current.find(n => n.id === sel.id);
@@ -723,10 +732,11 @@ export default function Canvas() {
   const handleBulkArrangeCircle = async () => {
     saveStateBeforeMutation();
     const booksToArrange = selectedNodes.filter(n => n.type === "book");
+    const moviesToArrange = selectedNodes.filter(n => n.type === "movie");
     const notesToArrange = selectedNodes.filter(n => n.type === "note");
     const pdfsToArrange = selectedNodes.filter(n => n.type === "pdf");
     const imagesToArrange = selectedNodes.filter(n => n.type === "image");
-    const totalToArrange = [...booksToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
+    const totalToArrange = [...booksToArrange, ...moviesToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
 
     if (totalToArrange.length === 0) return;
 
@@ -738,6 +748,8 @@ export default function Canvas() {
     totalToArrange.forEach(sel => {
       const item = sel.type === "book"
         ? booksRef.current.find(b => b.id === sel.id)
+        : sel.type === "movie"
+        ? moviesRef.current.find(m => m.id === sel.id)
         : sel.type === "pdf"
         ? pdfsRef.current.find(p => p.id === sel.id)
         : sel.type === "image"
@@ -761,7 +773,7 @@ export default function Canvas() {
 
     const radius = Math.max(250, totalToArrange.length * 60);
     const angleStep = (2 * Math.PI) / totalToArrange.length;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
 
     totalToArrange.forEach((sel, index) => {
       const angle = index * angleStep;
@@ -773,6 +785,12 @@ export default function Canvas() {
         if (book) {
           setBooks(prev => prev.map(b => b.id === book.id ? { ...b, x_pos: targetX, y_pos: targetY } : b));
           batch.books.push({ id: book.id, x_pos: targetX, y_pos: targetY });
+        }
+      } else if (sel.type === "movie") {
+        const movie = moviesRef.current.find(m => m.id === sel.id);
+        if (movie) {
+          setMovies(prev => prev.map(m => m.id === movie.id ? { ...m, x_pos: targetX, y_pos: targetY } : m));
+          batch.movies.push({ id: movie.id, x_pos: targetX, y_pos: targetY });
         }
       } else if (sel.type === "note") {
         const note = notesRef.current.find(n => n.id === sel.id);
@@ -810,10 +828,11 @@ export default function Canvas() {
   const handleBulkArrangeHorizontal = async () => {
     saveStateBeforeMutation();
     const booksToArrange = selectedNodes.filter(n => n.type === "book");
+    const moviesToArrange = selectedNodes.filter(n => n.type === "movie");
     const notesToArrange = selectedNodes.filter(n => n.type === "note");
     const pdfsToArrange = selectedNodes.filter(n => n.type === "pdf");
     const imagesToArrange = selectedNodes.filter(n => n.type === "image");
-    const totalToArrange = [...booksToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
+    const totalToArrange = [...booksToArrange, ...moviesToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
 
     if (totalToArrange.length === 0) return;
 
@@ -824,6 +843,8 @@ export default function Canvas() {
     totalToArrange.forEach(sel => {
       const item = sel.type === "book"
         ? booksRef.current.find(b => b.id === sel.id)
+        : sel.type === "movie"
+        ? moviesRef.current.find(m => m.id === sel.id)
         : sel.type === "pdf"
         ? pdfsRef.current.find(p => p.id === sel.id)
         : sel.type === "image"
@@ -843,7 +864,7 @@ export default function Canvas() {
     const minX = itemsWithCoords[0].x;
 
     const spacing = 280;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
 
     itemsWithCoords.forEach((entry, index) => {
       const targetX = Math.round((minX + index * spacing) / 20) * 20;
@@ -852,6 +873,9 @@ export default function Canvas() {
       if (entry.sel.type === "book") {
         setBooks(prev => prev.map(b => b.id === entry.item.id ? { ...b, x_pos: targetX, y_pos: targetY } : b));
         batch.books.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY });
+      } else if (entry.sel.type === "movie") {
+        setMovies(prev => prev.map(m => m.id === entry.item.id ? { ...m, x_pos: targetX, y_pos: targetY } : m));
+        batch.movies.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY });
       } else if (entry.sel.type === "note") {
         setNotes(prev => prev.map(n => n.id === entry.item.id ? { ...n, x_pos: targetX, y_pos: targetY } : n));
         batch.notes.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY, width: entry.item.width || 220, height: entry.item.height || 150 });
@@ -879,10 +903,11 @@ export default function Canvas() {
   const handleBulkArrangeVertical = async () => {
     saveStateBeforeMutation();
     const booksToArrange = selectedNodes.filter(n => n.type === "book");
+    const moviesToArrange = selectedNodes.filter(n => n.type === "movie");
     const notesToArrange = selectedNodes.filter(n => n.type === "note");
     const pdfsToArrange = selectedNodes.filter(n => n.type === "pdf");
     const imagesToArrange = selectedNodes.filter(n => n.type === "image");
-    const totalToArrange = [...booksToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
+    const totalToArrange = [...booksToArrange, ...moviesToArrange, ...notesToArrange, ...pdfsToArrange, ...imagesToArrange];
 
     if (totalToArrange.length === 0) return;
 
@@ -893,6 +918,8 @@ export default function Canvas() {
     totalToArrange.forEach(sel => {
       const item = sel.type === "book"
         ? booksRef.current.find(b => b.id === sel.id)
+        : sel.type === "movie"
+        ? moviesRef.current.find(m => m.id === sel.id)
         : sel.type === "pdf"
         ? pdfsRef.current.find(p => p.id === sel.id)
         : sel.type === "image"
@@ -912,7 +939,7 @@ export default function Canvas() {
     const minY = itemsWithCoords[0].y;
 
     const spacing = 240;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
 
     itemsWithCoords.forEach((entry, index) => {
       const targetX = baselineX;
@@ -921,6 +948,9 @@ export default function Canvas() {
       if (entry.sel.type === "book") {
         setBooks(prev => prev.map(b => b.id === entry.item.id ? { ...b, x_pos: targetX, y_pos: targetY } : b));
         batch.books.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY });
+      } else if (entry.sel.type === "movie") {
+        setMovies(prev => prev.map(m => m.id === entry.item.id ? { ...m, x_pos: targetX, y_pos: targetY } : m));
+        batch.movies.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY });
       } else if (entry.sel.type === "note") {
         setNotes(prev => prev.map(n => n.id === entry.item.id ? { ...n, x_pos: targetX, y_pos: targetY } : n));
         batch.notes.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY, width: entry.item.width || 220, height: entry.item.height || 150 });
@@ -3191,6 +3221,9 @@ export default function Canvas() {
 
     if (isHandwritingMode) {
       if (brushMode === "erase") {
+        try {
+          e.target.releasePointerCapture(e.pointerId);
+        } catch (err) {}
         return;
       }
       e.preventDefault();
@@ -4950,6 +4983,13 @@ export default function Canvas() {
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onGotPointerCapture={(e) => {
+        if (isHandwritingMode && brushMode === "erase") {
+          try {
+            e.target.releasePointerCapture(e.pointerId);
+          } catch (err) {}
+        }
+      }}
       onContextMenu={handleCanvasContextMenu}
       onDragOver={(e) => {
         e.preventDefault();
@@ -6208,7 +6248,10 @@ export default function Canvas() {
       )}
 
       {isHandwritingMode && (
-        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-4 px-5 py-3 bg-[#0a0a0af0] border border-[#00aaff]/40 rounded-xl shadow-[0_10px_35px_rgba(0,170,255,0.2)] backdrop-blur-xl pointer-events-auto">
+        <div 
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute top-16 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-4 px-5 py-3 bg-[#0a0a0af0] border border-[#00aaff]/40 rounded-xl shadow-[0_10px_35px_rgba(0,170,255,0.2)] backdrop-blur-xl pointer-events-auto"
+        >
           <div className="flex flex-col font-mono text-[9px] tracking-widest text-[#00aaff] border-r border-white/10 pr-4">
             <span className="font-bold">✏️ DRAWING MODULE ACTIVE</span>
             <span className="text-white/40 mt-0.5">
@@ -6325,7 +6368,10 @@ export default function Canvas() {
       )}
 
       {isLassoMode && (
-        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-[#00aaff]/40 rounded-xl shadow-[0_10px_35px_rgba(0,170,255,0.2)] backdrop-blur-xl pointer-events-auto">
+        <div 
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute top-16 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-[#00aaff]/40 rounded-xl shadow-[0_10px_35px_rgba(0,170,255,0.2)] backdrop-blur-xl pointer-events-auto"
+        >
           <div className="flex flex-col font-mono text-[9px] tracking-widest text-[#00aaff] border-r border-white/10 pr-4">
             <span className="font-bold">🎯 LASSO MATRIX ACTIVE</span>
             <span className="text-white/40 mt-0.5">
@@ -6365,7 +6411,10 @@ export default function Canvas() {
       />
 
       {selectedNodes.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 flex flex-col md:flex-row items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-white/10 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl pointer-events-auto">
+        <div 
+          onPointerDown={(e) => e.stopPropagation()}
+          className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 flex flex-col md:flex-row items-center gap-4 px-5 py-3 bg-[#0a0a0af5] border border-white/10 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl pointer-events-auto"
+        >
           {/* Status Label */}
           <div className="flex flex-col font-mono text-[9px] tracking-widest text-[#00aaff] border-r border-white/10 pr-4">
             <span className="font-bold">SELECTOR MATRIX ACTIVE</span>
