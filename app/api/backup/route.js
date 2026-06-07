@@ -3,7 +3,7 @@ import db from '@/lib/db';
 
 export async function GET() {
   try {
-    const books = db.prepare('SELECT * FROM books').all();
+        const books = db.prepare('SELECT * FROM books').all();
     const quotes = db.prepare('SELECT * FROM quotes').all();
     const areas = db.prepare('SELECT * FROM areas').all();
     const notes = db.prepare('SELECT * FROM notes').all();
@@ -13,6 +13,8 @@ export async function GET() {
     const pdf_highlights = db.prepare('SELECT * FROM pdf_highlights').all();
     const drawings = db.prepare('SELECT * FROM drawings').all();
     const images = db.prepare('SELECT * FROM images').all();
+    const movies = db.prepare('SELECT * FROM movies').all();
+    const movie_quotes = db.prepare('SELECT * FROM movie_quotes').all();
 
     return NextResponse.json({
       version: "1.0.0",
@@ -26,7 +28,9 @@ export async function GET() {
       pdfs,
       pdf_highlights,
       drawings,
-      images
+      images,
+      movies,
+      movie_quotes
     });
   } catch (error) {
     console.error('Backup failed:', error);
@@ -45,10 +49,14 @@ export async function POST(request) {
     const hasHighlights = 'pdf_highlights' in backupData;
     const hasDrawings = 'drawings' in backupData;
     const hasImages = 'images' in backupData;
+    const hasMovies = 'movies' in backupData;
+    const hasMovieQuotes = 'movie_quotes' in backupData;
     const { books = [], quotes = [], areas = [], notes = [], links = [], presets = [], pdfs = [] } = backupData;
     const pdf_highlights = hasHighlights ? backupData.pdf_highlights : [];
     const drawings = hasDrawings ? backupData.drawings : [];
     const images = hasImages ? backupData.images : [];
+    const movies = hasMovies ? backupData.movies : [];
+    const movie_quotes = hasMovieQuotes ? backupData.movie_quotes : [];
 
     const executeRestore = db.transaction(() => {
       // Clear tables
@@ -60,6 +68,8 @@ export async function POST(request) {
       db.prepare('DELETE FROM presets').run();
       db.prepare('DELETE FROM pdfs').run();
       db.prepare('DELETE FROM images').run();
+      db.prepare('DELETE FROM movie_quotes').run();
+      db.prepare('DELETE FROM movies').run();
       if (hasHighlights) {
         db.prepare('DELETE FROM pdf_highlights').run();
       }
@@ -251,6 +261,46 @@ export async function POST(request) {
             width: img.width || 300,
             height: img.height || 300,
             created_at: img.created_at || new Date().toISOString()
+          });
+        });
+      }
+
+      // Insert movies
+      if (hasMovies) {
+        const insertMovie = db.prepare(`
+          INSERT INTO movies (id, title, director, cover_url, rating, review, x_pos, y_pos, status, year, created_at)
+          VALUES (@id, @title, @director, @cover_url, @rating, @review, @x_pos, @y_pos, @status, @year, @created_at)
+        `);
+        movies.forEach(m => {
+          insertMovie.run({
+            id: m.id,
+            title: m.title,
+            director: m.director || '',
+            cover_url: m.cover_url || '',
+            rating: m.rating || 0,
+            review: m.review || '',
+            x_pos: m.x_pos || 0,
+            y_pos: m.y_pos || 0,
+            status: m.status || 'To Watch',
+            year: m.year || null,
+            created_at: m.created_at || new Date().toISOString()
+          });
+        });
+      }
+
+      // Insert movie quotes
+      if (hasMovieQuotes) {
+        const insertMovieQuote = db.prepare(`
+          INSERT INTO movie_quotes (id, movie_id, quote, x_pos, y_pos)
+          VALUES (@id, @movie_id, @quote, @x_pos, @y_pos)
+        `);
+        movie_quotes.forEach(q => {
+          insertMovieQuote.run({
+            id: q.id,
+            movie_id: q.movie_id,
+            quote: q.quote,
+            x_pos: q.x_pos || 0,
+            y_pos: q.y_pos || 0
           });
         });
       }

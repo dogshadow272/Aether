@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import BookNode from "./BookNode";
+import MovieNode from "./MovieNode";
 import QuoteNode from "./QuoteNode";
 import SearchModal from "./SearchModal";
 import ReviewModal from "./ReviewModal";
@@ -108,7 +109,7 @@ function StarfieldBackground({ pan, scale }) {
 }
 
 // Floating Viewport Radar / Minimap
-function Minimap({ books, notes, areas, pan, scale, setPan }) {
+function Minimap({ books, movies = [], notes, areas, pdfs = [], images = [], pan, scale, setPan }) {
   const minimapRef = useRef(null);
 
   const getCanvasBounds = () => {
@@ -119,8 +120,11 @@ function Minimap({ books, notes, areas, pan, scale, setPan }) {
 
     const allItems = [
       ...books.map(b => ({ x: b.x_pos, y: b.y_pos, w: 192, h: 300 })),
+      ...movies.map(m => ({ x: m.x_pos, y: m.y_pos, w: 192, h: 300 })),
       ...notes.map(n => ({ x: n.x_pos, y: n.y_pos, w: n.width || 220, h: n.height || 150 })),
-      ...areas.map(a => ({ x: a.x_pos, y: a.y_pos, w: a.width || 200, h: a.height || 200 }))
+      ...areas.map(a => ({ x: a.x_pos, y: a.y_pos, w: a.width || 200, h: a.height || 200 })),
+      ...pdfs.map(p => ({ x: p.x_pos, y: p.y_pos, w: p.width || 450, h: p.height || 600 })),
+      ...images.map(img => ({ x: img.x_pos, y: img.y_pos, w: img.width || 300, h: img.height || 300 }))
     ];
 
     if (allItems.length > 0) {
@@ -205,6 +209,45 @@ function Minimap({ books, notes, areas, pan, scale, setPan }) {
           />
         ))}
 
+        {movies.map((m) => (
+          <div
+            key={m.id}
+            className="absolute bg-[#a855f7]/50 rounded-sm border border-[#a855f7]/80"
+            style={{
+              left: toMinimapX(m.x_pos),
+              top: toMinimapY(m.y_pos),
+              width: Math.max((192 / bounds.width) * mapWidth, 3),
+              height: Math.max((300 / bounds.height) * mapHeight, 4),
+            }}
+          />
+        ))}
+
+        {pdfs.map((p) => (
+          <div
+            key={p.id}
+            className="absolute bg-[#eab308]/50 rounded-sm border border-[#eab308]/80"
+            style={{
+              left: toMinimapX(p.x_pos),
+              top: toMinimapY(p.y_pos),
+              width: Math.max(((p.width || 450) / bounds.width) * mapWidth, 3),
+              height: Math.max(((p.height || 600) / bounds.height) * mapHeight, 4),
+            }}
+          />
+        ))}
+
+        {images.map((img) => (
+          <div
+            key={img.id}
+            className="absolute bg-[#06b6d4]/50 rounded-sm border border-[#06b6d4]/80"
+            style={{
+              left: toMinimapX(img.x_pos),
+              top: toMinimapY(img.y_pos),
+              width: Math.max(((img.width || 300) / bounds.width) * mapWidth, 3),
+              height: Math.max(((img.height || 300) / bounds.height) * mapHeight, 3),
+            }}
+          />
+        ))}
+
         {notes.map((n) => (
           <div
             key={n.id}
@@ -260,6 +303,7 @@ const getSmoothSvgPath = (points) => {
 
 export default function Canvas() {
   const [books, setBooks] = useState([]);
+  const [movies, setMovies] = useState([]);
   const [quotes, setQuotes] = useState([]);
   const [areas, setAreas] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -268,6 +312,8 @@ export default function Canvas() {
   const [presets, setPresets] = useState([]);
   const [images, setImages] = useState([]);
   const [selectedBook, setSelectedBook] = useState(null);
+  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [openPdfSidebarId, setOpenPdfSidebarId] = useState(null);
   const [isPresentationMode, setIsPresentationMode] = useState(false);
   const [currentPresentationIndex, setCurrentPresentationIndex] = useState(0);
   const [isPresentationAutoPlay, setIsPresentationAutoPlay] = useState(false);
@@ -309,7 +355,6 @@ export default function Canvas() {
     presetsRef.current = presets;
     imagesRef.current = images;
   }, [pan, scale, presets, images]);
-  const [showTimeline, setShowTimeline] = useState(true);
   const [showConnections, setShowConnections] = useState(true);
   const [showGrid, setShowGrid] = useState(false);
   const [showDrawings, setShowDrawings] = useState(true);
@@ -323,7 +368,7 @@ export default function Canvas() {
   const [toast, setToast] = useState(null); // { message, type }
   const [pinnedNodeIds, setPinnedNodeIds] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("aether_pinned_nodes");
+      const saved = localStorage.getItem("apiron_pinned_nodes") || localStorage.getItem("aether_pinned_nodes");
       return saved ? new Set(JSON.parse(saved)) : new Set();
     }
     return new Set();
@@ -332,7 +377,7 @@ export default function Canvas() {
 
   useEffect(() => {
     pinnedNodeIdsRef.current = pinnedNodeIds;
-    localStorage.setItem("aether_pinned_nodes", JSON.stringify([...pinnedNodeIds]));
+    localStorage.setItem("apiron_pinned_nodes", JSON.stringify([...pinnedNodeIds]));
   }, [pinnedNodeIds]);
   const [hoveredNode, setHoveredNode] = useState(null); // { id, type }
   const [activeLinkMenuId, setActiveLinkMenuId] = useState(null);
@@ -341,6 +386,7 @@ export default function Canvas() {
   const [showFiltersDeck, setShowFiltersDeck] = useState(false);
   const [filters, setFilters] = useState({
     showBooks: true,
+    showMovies: true,
     showNotes: true,
     showPdfs: true,
     showAreas: true,
@@ -358,13 +404,29 @@ export default function Canvas() {
   const [drawColor, setDrawColor] = useState("#00aaff");
   const [drawWidth, setDrawWidth] = useState(4);
   const [drawings, setDrawings] = useState([]);
+  const [hoveredDrawingId, setHoveredDrawingId] = useState(null);
+  const [isZooming, setIsZooming] = useState(false);
+  const isZoomingRef = useRef(false);
+  const zoomTimeoutRef = useRef(null);
+
+  const triggerZoomActive = useCallback(() => {
+    if (!isZoomingRef.current) {
+      isZoomingRef.current = true;
+      setIsZooming(true);
+    }
+    clearTimeout(zoomTimeoutRef.current);
+    zoomTimeoutRef.current = setTimeout(() => {
+      isZoomingRef.current = false;
+      setIsZooming(false);
+    }, 300);
+  }, []);
   const [currentStroke, setCurrentStroke] = useState("");
   const isDrawingStrokeRef = useRef(false);
   const strokePointsRef = useRef([]);
   const drawingsRef = useRef([]);
   const [linkTypeConfigs, setLinkTypeConfigs] = useState(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("aether_link_type_configs");
+      const stored = localStorage.getItem("apiron_link_type_configs") || localStorage.getItem("aether_link_type_configs");
       if (stored) {
         try {
           return JSON.parse(stored);
@@ -383,7 +445,7 @@ export default function Canvas() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("aether_link_type_configs", JSON.stringify(linkTypeConfigs));
+      localStorage.setItem("apiron_link_type_configs", JSON.stringify(linkTypeConfigs));
     }
   }, [linkTypeConfigs]);
 
@@ -391,6 +453,7 @@ export default function Canvas() {
   const dragRef = useRef(null);
   const canvasRef = useRef(null);
   const booksRef = useRef(books);
+  const moviesRef = useRef(movies);
   const quotesRef = useRef(quotes);
   const areasRef = useRef(areas);
   const notesRef = useRef(notes);
@@ -406,6 +469,7 @@ export default function Canvas() {
   const saveStateBeforeMutation = useCallback(() => {
     const snapshot = {
       books: JSON.parse(JSON.stringify(booksRef.current)),
+      movies: JSON.parse(JSON.stringify(moviesRef.current)),
       quotes: JSON.parse(JSON.stringify(quotesRef.current)),
       areas: JSON.parse(JSON.stringify(areasRef.current)),
       notes: JSON.parse(JSON.stringify(notesRef.current)),
@@ -462,6 +526,11 @@ export default function Canvas() {
       if (!node) return;
       w = node.width || 300;
       h = node.height || 300;
+    } else if (nodeType === "movie") {
+      node = moviesRef.current.find(m => m.id === nodeId);
+      if (!node) return;
+      w = 192;
+      h = 300;
     } else if (nodeType === "quote") {
       node = quotesRef.current.find(q => q.id === nodeId);
       if (!node) return;
@@ -507,6 +576,7 @@ export default function Canvas() {
   }, [handleToggleFocus]);
 
   const handleNodeInteract = useCallback((id, type, zoom = true) => {
+    setSelectedNodes([{ id, type }]);
     if (zoom) {
       centerOnNode(id, type);
     }
@@ -542,6 +612,7 @@ export default function Canvas() {
     const promises = [
       ...notesToColor.map(sel => {
         const note = notesRef.current.find(n => n.id === sel.id);
+        if (!note) return null;
         return fetch("/api/notes", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -550,13 +621,14 @@ export default function Canvas() {
       }),
       ...areasToColor.map(sel => {
         const area = areasRef.current.find(a => a.id === sel.id);
+        if (!area) return null;
         return fetch("/api/areas", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...area, color: colorVal })
         });
       })
-    ];
+    ].filter(Boolean);
 
     try {
       await Promise.all(promises);
@@ -881,6 +953,7 @@ export default function Canvas() {
     saveStateBeforeMutation();
 
     const booksToDelete = currentSelection.filter(n => n.type === "book");
+    const moviesToDelete = currentSelection.filter(n => n.type === "movie");
     const notesToDelete = currentSelection.filter(n => n.type === "note");
     const pdfsToDelete = currentSelection.filter(n => n.type === "pdf");
     const areasToDelete = currentSelection.filter(n => n.type === "area");
@@ -892,6 +965,9 @@ export default function Canvas() {
     booksToDelete.forEach(b => {
       promises.push(fetch(`/api/books?id=${b.id}`, { method: "DELETE" }));
     });
+    moviesToDelete.forEach(m => {
+      promises.push(fetch(`/api/movies?id=${m.id}`, { method: "DELETE" }));
+    });
     notesToDelete.forEach(n => {
       promises.push(fetch(`/api/notes?id=${n.id}`, { method: "DELETE" }));
     });
@@ -902,7 +978,11 @@ export default function Canvas() {
       promises.push(fetch(`/api/areas?id=${a.id}`, { method: "DELETE" }));
     });
     quotesToDelete.forEach(q => {
-      promises.push(fetch(`/api/quotes?id=${q.id}`, { method: "DELETE" }));
+      if (q.movie_id !== undefined) {
+        promises.push(fetch(`/api/movie_quotes?id=${q.id}`, { method: "DELETE" }));
+      } else {
+        promises.push(fetch(`/api/quotes?id=${q.id}`, { method: "DELETE" }));
+      }
     });
     imagesToDelete.forEach(img => {
       promises.push(fetch(`/api/images?id=${img.id}`, { method: "DELETE" }));
@@ -912,6 +992,7 @@ export default function Canvas() {
       await Promise.all(promises);
 
       const bookIds = new Set(booksToDelete.map(n => n.id));
+      const movieIds = new Set(moviesToDelete.map(n => n.id));
       const noteIds = new Set(notesToDelete.map(n => n.id));
       const pdfIds = new Set(pdfsToDelete.map(n => n.id));
       const areaIds = new Set(areasToDelete.map(n => n.id));
@@ -921,6 +1002,10 @@ export default function Canvas() {
       if (bookIds.size > 0) {
         setBooks(prev => prev.filter(b => !bookIds.has(b.id)));
         setQuotes(prev => prev.filter(q => !bookIds.has(q.book_id)));
+      }
+      if (movieIds.size > 0) {
+        setMovies(prev => prev.filter(m => !movieIds.has(m.id)));
+        setQuotes(prev => prev.filter(q => !movieIds.has(q.movie_id)));
       }
       if (noteIds.size > 0) {
         setNotes(prev => prev.filter(n => !noteIds.has(n.id)));
@@ -938,7 +1023,7 @@ export default function Canvas() {
         setQuotes(prev => prev.filter(q => !quoteIds.has(q.id)));
       }
 
-      const allDeletedIds = new Set([...bookIds, ...noteIds, ...pdfIds, ...areaIds, ...quoteIds, ...imageIds]);
+      const allDeletedIds = new Set([...bookIds, ...movieIds, ...noteIds, ...pdfIds, ...areaIds, ...quoteIds, ...imageIds]);
       setLinks(prev => prev.filter(l => !allDeletedIds.has(l.source_id) && !allDeletedIds.has(l.target_id)));
 
       setSelectedNodes([]);
@@ -1160,24 +1245,62 @@ export default function Canvas() {
   };
 
   const handleBulkCreateZone = async () => {
-    const booksInSelection = selectedNodes.filter(n => n.type === "book");
-    const notesInSelection = selectedNodes.filter(n => n.type === "note");
-    const totalSelected = [...booksInSelection, ...notesInSelection];
-
-    if (totalSelected.length === 0) return;
+    if (selectedNodes.length === 0) return;
     saveStateBeforeMutation();
 
     let minX = Infinity, minY = Infinity;
     let maxX = -Infinity, maxY = -Infinity;
 
-    totalSelected.forEach(sel => {
-      const item = sel.type === "book"
-        ? booksRef.current.find(b => b.id === sel.id)
-        : notesRef.current.find(n => n.id === sel.id);
-      if (item) {
-        const w = sel.type === "book" ? 192 : (item.width || 220);
-        const h = sel.type === "book" ? (item.cover_url ? 320 : 160) : (item.height || 150);
+    selectedNodes.forEach(sel => {
+      let item = null;
+      let w = 200;
+      let h = 200;
 
+      if (sel.type === "book") {
+        item = booksRef.current.find(b => b.id === sel.id);
+        if (item) {
+          w = 192;
+          h = item.cover_url ? 320 : 160;
+        }
+      } else if (sel.type === "movie") {
+        item = moviesRef.current.find(m => m.id === sel.id);
+        if (item) {
+          w = 192;
+          h = 300;
+        }
+      } else if (sel.type === "pdf") {
+        item = pdfsRef.current.find(p => p.id === sel.id);
+        if (item) {
+          w = item.width || 340;
+          h = item.height || 480;
+        }
+      } else if (sel.type === "image") {
+        item = imagesRef.current.find(img => img.id === sel.id);
+        if (item) {
+          w = item.width || 300;
+          h = item.height || 220;
+        }
+      } else if (sel.type === "area") {
+        item = areasRef.current.find(a => a.id === sel.id);
+        if (item) {
+          w = item.width || 200;
+          h = item.height || 200;
+        }
+      } else if (sel.type === "quote") {
+        item = quotesRef.current.find(q => q.id === sel.id);
+        if (item) {
+          w = 280;
+          h = 100;
+        }
+      } else if (sel.type === "note") {
+        item = notesRef.current.find(n => n.id === sel.id);
+        if (item) {
+          w = item.width || 220;
+          h = item.height || 150;
+        }
+      }
+
+      if (item) {
         if (item.x_pos < minX) minX = item.x_pos;
         if (item.y_pos < minY) minY = item.y_pos;
         if (item.x_pos + w > maxX) maxX = item.x_pos + w;
@@ -1224,7 +1347,7 @@ export default function Canvas() {
 
     if (selectedBooks.length === 0 && selectedNotes.length === 0) return;
 
-    let md = `# AETHER WORKSPACE EXPORT — CONSOLIDATED TELEMETRY\n`;
+    let md = `# APIRON WORKSPACE EXPORT — CONSOLIDATED TELEMETRY\n`;
     md += `Export Date: ${new Date().toLocaleDateString()} | Active Selected Modules: ${selectedNodes.length}\n\n---\n\n`;
 
     if (selectedBooks.length > 0) {
@@ -1278,7 +1401,7 @@ export default function Canvas() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `aether_bulk_export_${new Date().toISOString().slice(0,10)}.md`);
+    link.setAttribute("download", `apiron_bulk_export_${new Date().toISOString().slice(0,10)}.md`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1439,6 +1562,7 @@ export default function Canvas() {
       if (!res.ok) throw new Error("Failed to restore backup snapshot");
       
       setBooks(state.books);
+      setMovies(state.movies || []);
       setQuotes(state.quotes);
       setAreas(state.areas);
       setNotes(state.notes);
@@ -1457,6 +1581,7 @@ export default function Canvas() {
     
     const currentState = {
       books: JSON.parse(JSON.stringify(booksRef.current)),
+      movies: JSON.parse(JSON.stringify(moviesRef.current)),
       quotes: JSON.parse(JSON.stringify(quotesRef.current)),
       areas: JSON.parse(JSON.stringify(areasRef.current)),
       notes: JSON.parse(JSON.stringify(notesRef.current)),
@@ -1478,6 +1603,7 @@ export default function Canvas() {
     
     const currentState = {
       books: JSON.parse(JSON.stringify(booksRef.current)),
+      movies: JSON.parse(JSON.stringify(moviesRef.current)),
       quotes: JSON.parse(JSON.stringify(quotesRef.current)),
       areas: JSON.parse(JSON.stringify(areasRef.current)),
       notes: JSON.parse(JSON.stringify(notesRef.current)),
@@ -1498,6 +1624,7 @@ export default function Canvas() {
   useEffect(() => {
     connectionSourceRef.current = connectionSource;
     booksRef.current = books;
+    moviesRef.current = movies;
     quotesRef.current = quotes;
     areasRef.current = areas;
     notesRef.current = notes;
@@ -1506,7 +1633,7 @@ export default function Canvas() {
     pdfsRef.current = pdfs;
     drawingsRef.current = drawings;
     imagesRef.current = images;
-  }, [connectionSource, books, quotes, areas, notes, links, selectedNodes, pdfs, drawings, images]);
+  }, [connectionSource, books, movies, quotes, areas, notes, links, selectedNodes, pdfs, drawings, images]);
 
   async function fetchBooks() {
     try {
@@ -1515,6 +1642,22 @@ export default function Canvas() {
       setBooks(data);
       const allQuotes = data.flatMap((b) => b.quotes || []);
       setQuotes(allQuotes);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function fetchMovies() {
+    try {
+      const res = await fetch("/api/movies");
+      const data = await res.json();
+      setMovies(data);
+      // merge movie_quotes into the flat quotes array
+      const movieQuotes = data.flatMap((m) => m.quotes || []);
+      setQuotes((prev) => [
+        ...prev.filter((q) => q.book_id !== undefined),
+        ...movieQuotes
+      ]);
     } catch (err) {
       console.error(err);
     }
@@ -1614,6 +1757,7 @@ export default function Canvas() {
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     fetchBooks();
+    fetchMovies();
     fetchAreas();
     fetchNotes();
     fetchLinks();
@@ -1827,6 +1971,17 @@ export default function Canvas() {
     setMouseCanvasPos(center);
   };
 
+  const findNodeByIdAndType = (id, type) => {
+    if (type === "book") return books.find(b => b.id === id);
+    if (type === "movie") return movies.find(m => m.id === id);
+    if (type === "note") return notes.find(n => n.id === id);
+    if (type === "pdf") return pdfs.find(p => p.id === id);
+    if (type === "image") return images.find(img => img.id === id);
+    if (type === "area") return areas.find(a => a.id === id);
+    if (type === "quote") return quotes.find(q => q.id === id);
+    return null;
+  };
+
   const getNodeCenter = (id, type) => {
     if (type === "book") {
       const b = booksRef.current.find(book => book.id === id);
@@ -1840,6 +1995,9 @@ export default function Canvas() {
     } else if (type === "image") {
       const img = imagesRef.current.find(image => image.id === id);
       if (img) return { x: img.x_pos + (img.width || 300) / 2, y: img.y_pos + (img.height || 300) / 2 };
+    } else if (type === "movie") {
+      const m = moviesRef.current.find(movie => movie.id === id);
+      if (m) return { x: m.x_pos + 96, y: m.y_pos + 150 };
     } else if (type === "quote") {
       const q = quotesRef.current.find(quote => quote.id === id);
       if (q) return { x: q.x_pos + 140, y: q.y_pos + 50 };
@@ -1862,6 +2020,9 @@ export default function Canvas() {
     } else if (type === "image") {
       w = node.width || 300;
       h = node.height || 300;
+    } else if (type === "movie") {
+      w = 192;
+      h = 300;
     } else if (type === "quote") {
       w = 280;
       h = 100;
@@ -1999,10 +2160,23 @@ export default function Canvas() {
     return p.name.toLowerCase().includes(canvasFilter.toLowerCase());
   };
 
+  const getMovieMatch = (m) => {
+    if (!canvasFilter) return true;
+    const f = canvasFilter.toLowerCase();
+    return (
+      m.title.toLowerCase().includes(f) ||
+      (m.director && m.director.toLowerCase().includes(f)) ||
+      (m.review && m.review.toLowerCase().includes(f))
+    );
+  };
+
   const getNodeMatch = (id, type) => {
     if (type === "book") {
       const b = books.find(book => book.id === id);
       return b ? getBookMatch(b) : false;
+    } else if (type === "movie") {
+      const m = movies.find(movie => movie.id === id);
+      return m ? getMovieMatch(m) : false;
     } else if (type === "note") {
       const n = notes.find(note => note.id === id);
       return n ? getNoteMatch(n) : false;
@@ -2079,6 +2253,81 @@ export default function Canvas() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleAddMovie = async (movieData) => {
+    saveStateBeforeMutation();
+    try {
+      let x_pos, y_pos;
+      if (pendingPlacement) {
+        x_pos = pendingPlacement.x;
+        y_pos = pendingPlacement.y;
+        setPendingPlacement(null);
+      } else {
+        const widthFactor = typeof window !== "undefined" ? window.innerWidth / 2 : 500;
+        const heightFactor = typeof window !== "undefined" ? window.innerHeight / 2 : 400;
+        x_pos = (widthFactor - pan.x) / scale - 96;
+        y_pos = (heightFactor - pan.y) / scale - 150;
+      }
+      if (snapToGrid) {
+        x_pos = Math.round(x_pos / 20) * 20;
+        y_pos = Math.round(y_pos / 20) * 20;
+      }
+      const res = await fetch("/api/movies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...movieData, x_pos, y_pos }),
+      });
+      const newMovie = await res.json();
+      setMovies((prev) => [...prev, newMovie]);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateMovie = async (updatedMovie, skipHistory = false) => {
+    if (!skipHistory) saveStateBeforeMutation();
+    try {
+      const res = await fetch("/api/movies", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedMovie),
+      });
+      const data = await res.json();
+      setMovies((prev) => prev.map((m) => (m.id === data.id ? data : m)));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleExtractMovieQuote = async (movieId, text) => {
+    saveStateBeforeMutation();
+    const movie = movies.find((m) => m.id === movieId);
+    if (!movie) return;
+    const x_pos = movie.x_pos + 250 + Math.random() * 50;
+    const y_pos = movie.y_pos + Math.random() * 100;
+    try {
+      const res = await fetch("/api/movie_quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ movie_id: movieId, quote: text, x_pos, y_pos }),
+      });
+      const newQuote = await res.json();
+      setQuotes((prev) => [...prev, newQuote]);
+      setMovies((prev) =>
+        prev.map((m) =>
+          m.id === movieId
+            ? { ...m, quotes: [...(m.quotes || []), newQuote] }
+            : m
+        )
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteMovie = (movieId) => {
+    setActiveDialog({ type: "confirm-delete-movie", movieId });
   };
 
   const createArea = async (areaData) => {
@@ -2265,8 +2514,20 @@ export default function Canvas() {
   const handleDeleteQuote = async (quoteId) => {
     saveStateBeforeMutation();
     try {
-      await fetch(`/api/quotes?id=${quoteId}`, { method: "DELETE" });
+      const quote = quotes.find(q => q.id === quoteId);
+      const isMovieQuote = quote && quote.movie_id !== undefined;
+      const endpoint = isMovieQuote ? `/api/movie_quotes?id=${quoteId}` : `/api/quotes?id=${quoteId}`;
+      await fetch(endpoint, { method: "DELETE" });
       setQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+      if (isMovieQuote && quote.movie_id) {
+        setMovies((prev) =>
+          prev.map((m) =>
+            m.id === quote.movie_id
+              ? { ...m, quotes: (m.quotes || []).filter((q) => q.id !== quoteId) }
+              : m
+          )
+        );
+      }
     } catch (err) {
       console.error(err);
     }
@@ -2550,6 +2811,7 @@ export default function Canvas() {
   const getNodesForType = useCallback((type) => {
     if (type === "note") return notesRef.current;
     if (type === "book") return booksRef.current;
+    if (type === "movie") return moviesRef.current;
     if (type === "pdf") return pdfsRef.current;
     if (type === "image") return imagesRef.current;
     if (type === "area") return areasRef.current;
@@ -2560,6 +2822,7 @@ export default function Canvas() {
   const setNodesForType = useCallback((type, updater) => {
     if (type === "note") setNotes(updater);
     else if (type === "book") setBooks(updater);
+    else if (type === "movie") setMovies(updater);
     else if (type === "pdf") setPdfs(updater);
     else if (type === "image") setImages(updater);
     else if (type === "area") setAreas(updater);
@@ -2802,7 +3065,7 @@ export default function Canvas() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `aether_board_backup_${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `apiron_board_backup_${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -2976,6 +3239,7 @@ export default function Canvas() {
     }
     tempSnapshotRef.current = {
       books: JSON.parse(JSON.stringify(booksRef.current)),
+      movies: JSON.parse(JSON.stringify(moviesRef.current)),
       quotes: JSON.parse(JSON.stringify(quotesRef.current)),
       areas: JSON.parse(JSON.stringify(areasRef.current)),
       notes: JSON.parse(JSON.stringify(notesRef.current)),
@@ -2987,15 +3251,17 @@ export default function Canvas() {
     setIsDragging(true);
     const items = type === "book" 
       ? booksRef.current 
-      : (type === "quote" 
-        ? quotesRef.current 
-        : (type === "area" || type === "area-resize" 
-          ? areasRef.current 
-          : (type === "pdf" || type === "pdf-resize" 
-            ? pdfsRef.current 
-            : (type === "image" || type === "image-resize"
-              ? imagesRef.current
-              : notesRef.current))));
+      : (type === "movie"
+        ? moviesRef.current
+        : (type === "quote" 
+          ? quotesRef.current 
+          : (type === "area" || type === "area-resize" 
+            ? areasRef.current 
+            : (type === "pdf" || type === "pdf-resize" 
+              ? pdfsRef.current 
+              : (type === "image" || type === "image-resize"
+                ? imagesRef.current
+                : notesRef.current)))));
     const item = items.find((i) => i.id === id);
     if (!item) return;
 
@@ -3011,6 +3277,10 @@ export default function Canvas() {
       const containedBooks = booksRef.current
         .filter((b) => b.x_pos >= ax1 && b.x_pos <= ax2 && b.y_pos >= ay1 && b.y_pos <= ay2)
         .map((b) => ({ id: b.id, startX: b.x_pos, startY: b.y_pos }));
+
+      const containedMovies = moviesRef.current
+        .filter((m) => m.x_pos >= ax1 && m.x_pos <= ax2 && m.y_pos >= ay1 && m.y_pos <= ay2)
+        .map((m) => ({ id: m.id, startX: m.x_pos, startY: m.y_pos }));
 
       const containedQuotes = quotesRef.current
         .filter((q) => q.x_pos >= ax1 && q.x_pos <= ax2 && q.y_pos >= ay1 && q.y_pos <= ay2)
@@ -3030,6 +3300,7 @@ export default function Canvas() {
 
       containedItems = { 
         books: containedBooks, 
+        movies: containedMovies,
         quotes: containedQuotes, 
         notes: containedNotes, 
         pdfs: containedPdfs,
@@ -3044,15 +3315,17 @@ export default function Canvas() {
       groupItems = selectedNodesRef.current.map((node) => {
         const list = node.type === "book" 
           ? booksRef.current 
-          : (node.type === "quote" 
-            ? quotesRef.current 
-            : (node.type === "area" 
-              ? areasRef.current 
-              : (node.type === "pdf" 
-                ? pdfsRef.current 
-                : (node.type === "image" 
-                  ? imagesRef.current 
-                  : notesRef.current))));
+          : (node.type === "movie"
+            ? moviesRef.current
+            : (node.type === "quote" 
+              ? quotesRef.current 
+              : (node.type === "area" 
+                ? areasRef.current 
+                : (node.type === "pdf" 
+                  ? pdfsRef.current 
+                  : (node.type === "image" 
+                    ? imagesRef.current 
+                    : notesRef.current)))));
         const itemObj = list.find((i) => i.id === node.id);
         return {
           id: node.id,
@@ -3100,6 +3373,7 @@ export default function Canvas() {
 
     // Multi-touch pinch-to-zoom and pan support
     if (activePointersRef.current.size >= 2) {
+      triggerZoomActive();
       const pointers = Array.from(activePointersRef.current.values());
       const p1 = pointers[0];
       const p2 = pointers[1];
@@ -3297,6 +3571,19 @@ export default function Canvas() {
             return { ...img, x_pos: itemX, y_pos: itemY };
           })
         );
+        setMovies((prev) =>
+          prev.map((m) => {
+            const match = drag.groupItems.find((gi) => gi.id === m.id && gi.type === "movie");
+            if (!match) return m;
+            let itemX = match.startX + deltaX;
+            let itemY = match.startY + deltaY;
+            if (snapToGrid) {
+              itemX = Math.round(itemX / 20) * 20;
+              itemY = Math.round(itemY / 20) * 20;
+            }
+            return { ...m, x_pos: itemX, y_pos: itemY };
+          })
+        );
         return;
       }
 
@@ -3312,6 +3599,10 @@ export default function Canvas() {
         setBooks((prev) =>
           prev.map((b) => (b.id === drag.id ? { ...b, x_pos: newX, y_pos: newY } : b))
         );
+      } else if (drag.type === "movie") {
+        setMovies((prev) =>
+          prev.map((m) => (m.id === drag.id ? { ...m, x_pos: newX, y_pos: newY } : m))
+        );
       } else if (drag.type === "quote") {
         setQuotes((prev) =>
           prev.map((q) => (q.id === drag.id ? { ...q, x_pos: newX, y_pos: newY } : q))
@@ -3322,7 +3613,7 @@ export default function Canvas() {
         );
         // Shift grouped items in sync
         if (drag.containedItems) {
-          const { books: cBooks, quotes: cQuotes, notes: cNotes, pdfs: cPdfs, images: cImages } = drag.containedItems;
+          const { books: cBooks, movies: cMovies, quotes: cQuotes, notes: cNotes, pdfs: cPdfs, images: cImages } = drag.containedItems;
           if (cBooks && cBooks.length > 0) {
             setBooks((prev) =>
               prev.map((b) => {
@@ -3335,6 +3626,21 @@ export default function Canvas() {
                   itemY = Math.round(itemY / 20) * 20;
                 }
                 return { ...b, x_pos: itemX, y_pos: itemY };
+              })
+            );
+          }
+          if (cMovies && cMovies.length > 0) {
+            setMovies((prev) =>
+              prev.map((m) => {
+                const match = cMovies.find((cm) => cm.id === m.id);
+                if (!match) return m;
+                let itemX = match.startX + deltaX;
+                let itemY = match.startY + deltaY;
+                if (snapToGrid) {
+                  itemX = Math.round(itemX / 20) * 20;
+                  itemY = Math.round(itemY / 20) * 20;
+                }
+                return { ...m, x_pos: itemX, y_pos: itemY };
               })
             );
           }
@@ -3505,7 +3811,14 @@ export default function Canvas() {
       const startY = connectionSourceRef.current.startY || 0;
       const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
       
-      const targetEl = e.target.closest("[data-node-id]");
+      let targetEl = e.target.closest("[data-node-id]");
+      if (!targetEl || targetEl.getAttribute("data-node-id") === connectionSourceRef.current.id) {
+        const elAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+        if (elAtPoint) {
+          targetEl = elAtPoint.closest("[data-node-id]");
+        }
+      }
+
       if (targetEl) {
         const targetId = targetEl.getAttribute("data-node-id");
         const targetType = targetEl.getAttribute("data-node-type");
@@ -3543,9 +3856,12 @@ export default function Canvas() {
 
     // Persist group dragging coordinate changes using batch transaction API
     if (drag.groupItems && drag.hasMoved) {
-      const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+      const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
       drag.groupItems.forEach((item) => {
-        if (item.type === "book") {
+        if (item.type === "movie") {
+          const movie = moviesRef.current.find((m) => m.id === item.id);
+          if (movie) batch.movies.push({ id: movie.id, x_pos: movie.x_pos, y_pos: movie.y_pos });
+        } else if (item.type === "book") {
           const book = booksRef.current.find((b) => b.id === item.id);
           if (book) batch.books.push({ id: book.id, x_pos: book.x_pos, y_pos: book.y_pos });
         } else if (item.type === "note") {
@@ -3644,11 +3960,21 @@ export default function Canvas() {
           if (intersects) newSelected.push({ id: q.id, type: "quote" });
         });
 
+        const visibleMovieIds = new Set(filteredMovies.map(m => m.id));
+        moviesRef.current.forEach((m) => {
+          if (!visibleMovieIds.has(m.id)) return;
+          const w = 192;
+          const h = 300;
+          const intersects = !(m.x_pos + w < lx1 || m.x_pos > lx2 || m.y_pos + h < ly1 || m.y_pos > ly2);
+          if (intersects) newSelected.push({ id: m.id, type: "movie" });
+        });
+
         setSelectedNodes(newSelected);
       } else {
         setSelectedNodes([]);
       }
       setTempLassoBox(null);
+      setIsLassoMode(false);
     } else if (drag.type === "drawing") {
       if (tempBox && tempBox.w > 20 && tempBox.h > 20) {
         setActiveDialog({ type: "create-zone", tempBox });
@@ -3688,6 +4014,37 @@ export default function Canvas() {
           }
         }
       }
+    } else if (drag.type === "movie") {
+      if (drag.hasMoved) {
+        const movie = moviesRef.current.find((m) => m.id === drag.id);
+        if (movie) {
+          fetch("/api/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ movies: [{ id: movie.id, x_pos: movie.x_pos, y_pos: movie.y_pos }] }),
+          }).catch((err) => console.error(err));
+        }
+      } else {
+        if (e.shiftKey) {
+          const isSelected = selectedNodesRef.current.some((n) => n.id === drag.id && n.type === "movie");
+          setSelectedNodes((prev) =>
+            isSelected
+              ? prev.filter((n) => !(n.id === drag.id && n.type === "movie"))
+              : [...prev, { id: drag.id, type: "movie" }]
+          );
+        } else {
+          setSelectedNodes([]);
+          if (connectionSourceRef.current) {
+            createLink(connectionSourceRef.current, { id: drag.id, type: "movie" });
+            setConnectionSource(null);
+          } else {
+            const movie = moviesRef.current.find((m) => m.id === drag.id);
+            if (movie) {
+              setSelectedMovie(movie);
+            }
+          }
+        }
+      }
     } else if (drag.type === "quote") {
       if (drag.hasMoved) {
         const quote = quotesRef.current.find((q) => q.id === drag.id);
@@ -3712,7 +4069,7 @@ export default function Canvas() {
       }
     } else if (drag.type === "area" || drag.type === "area-resize") {
       if (drag.hasMoved) {
-        const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+        const batch = { books: [], movies: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
         const area = areasRef.current.find((a) => a.id === drag.id);
         if (area) {
           batch.areas.push({ id: area.id, x_pos: area.x_pos, y_pos: area.y_pos, width: area.width || 200, height: area.height || 200 });
@@ -3720,11 +4077,16 @@ export default function Canvas() {
 
         // Persist new coordinates of all grouped elements
         if (drag.type === "area" && drag.containedItems) {
-          const { books: cBooks, quotes: cQuotes, notes: cNotes, pdfs: cPdfs, images: cImages } = drag.containedItems;
+          const { books: cBooks, movies: cMovies, quotes: cQuotes, notes: cNotes, pdfs: cPdfs, images: cImages } = drag.containedItems;
           
           cBooks?.forEach((cb) => {
             const b = booksRef.current.find((book) => book.id === cb.id);
             if (b) batch.books.push({ id: b.id, x_pos: b.x_pos, y_pos: b.y_pos });
+          });
+
+          cMovies?.forEach((cm) => {
+            const m = moviesRef.current.find((movie) => movie.id === cm.id);
+            if (m) batch.movies.push({ id: m.id, x_pos: m.x_pos, y_pos: m.y_pos });
           });
 
           cQuotes?.forEach((cq) => {
@@ -3939,7 +4301,12 @@ export default function Canvas() {
         if (connectionSourceRef.current) {
           setConnectionSource(null);
         }
-        setSelectedNodes([]);
+        if (isLassoMode || isHandwritingMode) {
+          setIsLassoMode(false);
+          setIsHandwritingMode(false);
+        } else {
+          setSelectedNodes([]);
+        }
       }
 
       if (!isTyping) {
@@ -4051,31 +4418,14 @@ export default function Canvas() {
   }, [isPresentationMode, isPresentationAutoPlay, currentPresentationIndex, presentationInterval, presets.length]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
     const handleWheelEvent = (e) => {
-      // Allow default browser scrolling for scrollable containers, note editors, and modals
-      if (
-        e.target.closest(".overflow-y-auto") ||
-        e.target.closest("[contenteditable]") ||
-        e.target.closest(".aero-panel") ||
-        e.target.closest(".fixed")
-      ) {
-        return;
-      }
-
-      e.preventDefault();
-      
-      // On Mac, figma/miro use Cmd+wheel to zoom. e.metaKey is true.
-      // On Windows/Linux, they use Ctrl+wheel. e.ctrlKey is true.
-      // Trackpad pinch zoom on both macOS and Windows synthesizes wheel with e.ctrlKey = true.
       const isZoomGesture = e.ctrlKey || e.metaKey;
 
       if (isZoomGesture) {
-        // Zooming behavior
-        // Trackpad pinch events typically have smaller deltaY values, so we use a larger multiplier
-        // when e.ctrlKey is true without e.metaKey (indicating a trackpad pinch).
+        e.preventDefault();
+        triggerZoomActive();
+        setSelectedNodes((prev) => prev.filter((n) => n.type !== "pdf"));
+        
         const isTrackpadPinch = e.ctrlKey && !e.metaKey;
         const multiplier = isTrackpadPinch ? 0.015 : 0.003;
         
@@ -4087,7 +4437,9 @@ export default function Canvas() {
         
         const nextScale = Math.min(Math.max(currentScale * zoomFactor, 0.15), 3);
         
-        const rect = canvas.getBoundingClientRect();
+        const targetCanvas = canvasRef.current;
+        if (!targetCanvas) return;
+        const rect = targetCanvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
         
@@ -4105,6 +4457,17 @@ export default function Canvas() {
         scaleRef.current = nextScale;
         panRef.current = nextPan;
       } else {
+        // Allow default browser scrolling for scrollable containers, note editors, and modals
+        if (
+          e.target.closest(".overflow-y-auto") ||
+          e.target.closest("[contenteditable]") ||
+          e.target.closest(".aero-panel") ||
+          e.target.closest(".fixed")
+        ) {
+          return;
+        }
+
+        e.preventDefault();
         // Panning behavior (Miro/Figma swipe gesture or standard Scroll)
         const nextPan = {
           x: panRef.current.x - e.deltaX,
@@ -4115,9 +4478,278 @@ export default function Canvas() {
       }
     };
 
-    canvas.addEventListener("wheel", handleWheelEvent, { passive: false });
+    const handleTouchMove = (e) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+      }
+    };
+
+    let gestureStartScale = 1;
+    const handleGestureStart = (e) => {
+      e.preventDefault();
+      gestureStartScale = scaleRef.current;
+      setSelectedNodes((prev) => prev.filter((n) => n.type !== "pdf"));
+    };
+
+    const handleGestureChange = (e) => {
+      e.preventDefault();
+      triggerZoomActive();
+      const currentScale = scaleRef.current;
+      const currentPan = panRef.current;
+      
+      const nextScale = Math.min(Math.max(gestureStartScale * e.scale, 0.15), 3);
+      
+      const targetCanvas = canvasRef.current;
+      if (!targetCanvas) return;
+      const rect = targetCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      const canvasMouseX = (mouseX - currentPan.x) / currentScale;
+      const canvasMouseY = (mouseY - currentPan.y) / currentScale;
+      
+      const nextPan = {
+        x: mouseX - canvasMouseX * nextScale,
+        y: mouseY - canvasMouseY * nextScale,
+      };
+      
+      setScale(nextScale);
+      setPan(nextPan);
+      
+      scaleRef.current = nextScale;
+      panRef.current = nextPan;
+    };
+
+    window.addEventListener("wheel", handleWheelEvent, { passive: false, capture: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
+    window.addEventListener("gesturestart", handleGestureStart, { passive: false, capture: true });
+    window.addEventListener("gesturechange", handleGestureChange, { passive: false, capture: true });
+
     return () => {
-      canvas.removeEventListener("wheel", handleWheelEvent);
+      window.removeEventListener("wheel", handleWheelEvent, { capture: true });
+      window.removeEventListener("touchmove", handleTouchMove, { capture: true });
+      window.removeEventListener("gesturestart", handleGestureStart, { capture: true });
+      window.removeEventListener("gesturechange", handleGestureChange, { capture: true });
+    };
+  }, [triggerZoomActive]);
+
+  useEffect(() => {
+    const handleIframeMessage = (e) => {
+      if (e.data && e.data.type === "IFRAME_ZOOM") {
+        triggerZoomActive();
+        setSelectedNodes((prev) => prev.filter((n) => n.type !== "pdf"));
+        const { deltaY, clientX, clientY, ctrlKey, metaKey } = e.data;
+        const iframes = Array.from(document.querySelectorAll("iframe"));
+        const iframe = iframes.find((f) => f.contentWindow === e.source);
+        if (!iframe) return;
+
+        const rect = iframe.getBoundingClientRect();
+        const windowClientX = rect.left + clientX;
+        const windowClientY = rect.top + clientY;
+
+        const isTrackpadPinch = ctrlKey && !metaKey;
+        const multiplier = isTrackpadPinch ? 0.015 : 0.003;
+        
+        const delta = -deltaY;
+        const zoomFactor = Math.exp(delta * multiplier);
+
+        const currentScale = scaleRef.current;
+        const currentPan = panRef.current;
+        const nextScale = Math.min(Math.max(currentScale * zoomFactor, 0.15), 3);
+
+        const targetCanvas = canvasRef.current;
+        if (!targetCanvas) return;
+        const canvasRect = targetCanvas.getBoundingClientRect();
+
+        const mouseX = windowClientX - canvasRect.left;
+        const mouseY = windowClientY - canvasRect.top;
+
+        const canvasMouseX = (mouseX - currentPan.x) / currentScale;
+        const canvasMouseY = (mouseY - currentPan.y) / currentScale;
+
+        const nextPan = {
+          x: mouseX - canvasMouseX * nextScale,
+          y: mouseY - canvasMouseY * nextScale,
+        };
+
+        setScale(nextScale);
+        setPan(nextPan);
+        scaleRef.current = nextScale;
+        panRef.current = nextPan;
+      } else if (e.data && e.data.type === "IFRAME_PAN") {
+        const { deltaX, deltaY } = e.data;
+        const nextPan = {
+          x: panRef.current.x - deltaX,
+          y: panRef.current.y - deltaY,
+        };
+        setPan(nextPan);
+        panRef.current = nextPan;
+      } else if (e.data && e.data.type === "IFRAME_PINCH_START") {
+        setSelectedNodes((prev) => prev.filter((n) => n.type !== "pdf"));
+      } else if (e.data && e.data.type === "IFRAME_TOUCH_GESTURE_START") {
+        triggerZoomActive();
+        setSelectedNodes((prev) => prev.filter((n) => n.type !== "pdf"));
+        const { dist, clientX, clientY } = e.data;
+        const iframes = Array.from(document.querySelectorAll("iframe"));
+        const iframe = iframes.find((f) => f.contentWindow === e.source);
+        if (!iframe) return;
+        const rect = iframe.getBoundingClientRect();
+        const windowClientX = rect.left + clientX;
+        const windowClientY = rect.top + clientY;
+
+        gestureStartDistRef.current = dist;
+        gestureStartScaleRef.current = scaleRef.current;
+        gestureStartPanRef.current = { ...panRef.current };
+        gestureStartCenterRef.current = { x: windowClientX, y: windowClientY };
+        isGestureActiveRef.current = true;
+      } else if (e.data && e.data.type === "IFRAME_TOUCH_GESTURE_MOVE") {
+        if (!isGestureActiveRef.current) return;
+        const { dist, clientX, clientY } = e.data;
+        const iframes = Array.from(document.querySelectorAll("iframe"));
+        const iframe = iframes.find((f) => f.contentWindow === e.source);
+        if (!iframe) return;
+        const rect = iframe.getBoundingClientRect();
+        const windowClientX = rect.left + clientX;
+        const windowClientY = rect.top + clientY;
+
+        const currentDist = dist;
+        const currentCenter = { x: windowClientX, y: windowClientY };
+
+        let newScale = scaleRef.current;
+        if (gestureStartDistRef.current > 0) {
+          const ratio = currentDist / gestureStartDistRef.current;
+          newScale = Math.min(Math.max(gestureStartScaleRef.current * ratio, 0.15), 3);
+        }
+
+        const deltaCenter = {
+          x: currentCenter.x - gestureStartCenterRef.current.x,
+          y: currentCenter.y - gestureStartCenterRef.current.y,
+        };
+
+        const targetCanvas = canvasRef.current;
+        if (!targetCanvas) return;
+        const canvasRect = targetCanvas.getBoundingClientRect();
+        const gestureX = gestureStartCenterRef.current.x - canvasRect.left;
+        const gestureY = gestureStartCenterRef.current.y - canvasRect.top;
+
+        const canvasX = (gestureX - gestureStartPanRef.current.x) / gestureStartScaleRef.current;
+        const canvasY = (gestureY - gestureStartPanRef.current.y) / gestureStartScaleRef.current;
+
+        const nextPan = {
+          x: (gestureX + deltaCenter.x) - canvasX * newScale,
+          y: (gestureY + deltaCenter.y) - canvasY * newScale,
+        };
+
+        setScale(newScale);
+        setPan(nextPan);
+        scaleRef.current = newScale;
+        panRef.current = nextPan;
+      } else if (e.data && e.data.type === "IFRAME_TOUCH_GESTURE_END") {
+        isGestureActiveRef.current = false;
+        gestureStartDistRef.current = 0;
+      }
+    };
+
+    window.addEventListener("message", handleIframeMessage);
+    return () => {
+      window.removeEventListener("message", handleIframeMessage);
+    };
+  }, [triggerZoomActive]);
+
+  useEffect(() => {
+    const trackPointerDown = (e) => {
+      activePointersRef.current.set(e.pointerId, {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pointerType: e.pointerType,
+      });
+
+      if (activePointersRef.current.size >= 2) {
+        setSelectedNodes((prev) => prev.filter((n) => n.type !== "pdf"));
+        const pointers = Array.from(activePointersRef.current.values());
+        const dx = pointers[0].clientX - pointers[1].clientX;
+        const dy = pointers[0].clientY - pointers[1].clientY;
+        gestureStartDistRef.current = Math.hypot(dx, dy);
+        gestureStartScaleRef.current = scaleRef.current;
+        gestureStartPanRef.current = { ...panRef.current };
+        gestureStartCenterRef.current = {
+          x: (pointers[0].clientX + pointers[1].clientX) / 2,
+          y: (pointers[0].clientY + pointers[1].clientY) / 2,
+        };
+        isGestureActiveRef.current = true;
+      }
+    };
+
+    const trackPointerMove = (e) => {
+      if (activePointersRef.current.has(e.pointerId)) {
+        activePointersRef.current.set(e.pointerId, {
+          clientX: e.clientX,
+          clientY: e.clientY,
+          pointerType: e.pointerType,
+        });
+
+        if (activePointersRef.current.size >= 2 && isGestureActiveRef.current) {
+          const pointers = Array.from(activePointersRef.current.values());
+          const p1 = pointers[0];
+          const p2 = pointers[1];
+          const currentDist = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+          const currentCenter = {
+            x: (p1.clientX + p2.clientX) / 2,
+            y: (p1.clientY + p2.clientY) / 2,
+          };
+
+          let newScale = scaleRef.current;
+          if (gestureStartDistRef.current > 0) {
+            const ratio = currentDist / gestureStartDistRef.current;
+            newScale = Math.min(Math.max(gestureStartScaleRef.current * ratio, 0.15), 3);
+          }
+
+          const deltaCenter = {
+            x: currentCenter.x - gestureStartCenterRef.current.x,
+            y: currentCenter.y - gestureStartCenterRef.current.y,
+          };
+
+          const targetCanvas = canvasRef.current;
+          if (targetCanvas) {
+            const rect = targetCanvas.getBoundingClientRect();
+            const gestureX = gestureStartCenterRef.current.x - rect.left;
+            const gestureY = gestureStartCenterRef.current.y - rect.top;
+
+            const canvasX = (gestureX - gestureStartPanRef.current.x) / gestureStartScaleRef.current;
+            const canvasY = (gestureY - gestureStartPanRef.current.y) / gestureStartScaleRef.current;
+
+            const nextPan = {
+              x: (gestureX + deltaCenter.x) - canvasX * newScale,
+              y: (gestureY + deltaCenter.y) - canvasY * newScale,
+            };
+
+            setPan(nextPan);
+            setScale(newScale);
+            panRef.current = nextPan;
+            scaleRef.current = newScale;
+          }
+        }
+      }
+    };
+
+    const trackPointerUp = (e) => {
+      activePointersRef.current.delete(e.pointerId);
+      if (activePointersRef.current.size < 2) {
+        isGestureActiveRef.current = false;
+        gestureStartDistRef.current = 0;
+      }
+    };
+
+    window.addEventListener("pointerdown", trackPointerDown, { capture: true });
+    window.addEventListener("pointermove", trackPointerMove, { capture: true });
+    window.addEventListener("pointerup", trackPointerUp, { capture: true });
+    window.addEventListener("pointercancel", trackPointerUp, { capture: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", trackPointerDown, { capture: true });
+      window.removeEventListener("pointermove", trackPointerMove, { capture: true });
+      window.removeEventListener("pointerup", trackPointerUp, { capture: true });
+      window.removeEventListener("pointercancel", trackPointerUp, { capture: true });
     };
   }, []);
 
@@ -4266,6 +4898,11 @@ export default function Canvas() {
     return matchBook && (!filters.showOnlyOrphans || !links.some(l => l.source_id === q.id || l.target_id === q.id));
   }).sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
 
+  const filteredMovies = movies.filter(m =>
+    filters.showMovies !== false &&
+    (!filters.showOnlyOrphans || !links.some(l => l.source_id === m.id || l.target_id === m.id))
+  ).sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
+
   const filteredLinks = links.filter(l => {
     const sourceExists = 
       (l.source_type === "book" && filteredBooks.some(b => b.id === l.source_id)) ||
@@ -4273,6 +4910,7 @@ export default function Canvas() {
       (l.source_type === "pdf" && filteredPdfs.some(p => p.id === l.source_id)) ||
       (l.source_type === "image" && filteredImages.some(img => img.id === l.source_id)) ||
       (l.source_type === "area" && filteredAreas.some(a => a.id === l.source_id)) ||
+      (l.source_type === "movie" && filteredMovies.some(m => m.id === l.source_id)) ||
       (l.source_type === "quote" && filteredQuotes.some(q => q.id === l.source_id));
       
     const targetExists = 
@@ -4281,6 +4919,7 @@ export default function Canvas() {
       (l.target_type === "pdf" && filteredPdfs.some(p => p.id === l.target_id)) ||
       (l.target_type === "image" && filteredImages.some(img => img.id === l.target_id)) ||
       (l.target_type === "area" && filteredAreas.some(a => a.id === l.target_id)) ||
+      (l.target_type === "movie" && filteredMovies.some(m => m.id === l.target_id)) ||
       (l.target_type === "quote" && filteredQuotes.some(q => q.id === l.target_id));
       
     return sourceExists && targetExists;
@@ -4297,6 +4936,7 @@ export default function Canvas() {
 
   const isDraggingActive = isDragging || !!connectionSource;
   const isCanvasInteractMode = !isHandwritingMode && !isLassoMode && !isDrawingMode;
+  const isNodeInteractive = isCanvasInteractMode && !isZooming;
   const canvasCursor = isHandwritingMode 
     ? (brushMode === "erase" ? "cell" : "crosshair") 
     : (isLassoMode ? "crosshair" : (isDrawingMode ? "crosshair" : (isDraggingActive ? "grabbing" : "grab")));
@@ -4320,7 +4960,7 @@ export default function Canvas() {
     >
       {/* Minimal status wordmark & coordinates top-left */}
       <div className="fixed top-6 left-6 z-30 pointer-events-none flex flex-col font-mono tracking-widest text-left select-none">
-        <span className="text-white text-[11px] font-bold opacity-80 uppercase">Aether_OS // Workspace</span>
+        <span className="text-white text-[11px] font-bold opacity-80 uppercase">Apiron_OS // Workspace</span>
         <span className="text-gray-500 text-[8.5px] mt-0.5 uppercase">
           COORD: {Math.round(-pan.x)}, {Math.round(-pan.y)} | ZOOM: {Math.round(scale * 100)}%
         </span>
@@ -4541,12 +5181,12 @@ export default function Canvas() {
                 height: 0,
                 zIndex: areaZIndex,
                 opacity: isMatched ? 1 : 0.15,
-                pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: area.id, type: "area" })}
               onPointerLeave={() => setHoveredNode(null)}
               onContextMenu={(e) => {
-                if (!isCanvasInteractMode) return;
+                if (!isNodeInteractive) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -4590,7 +5230,8 @@ export default function Canvas() {
           );
           const isSelected = selectedNodes.some((n) => n.id === pdf.id && n.type === "pdf");
           const isHighlighted = teleportHighlightNodeId === pdf.id;
-          const pdfZIndex = isSelected || isHighlighted ? 150 : 40 + (pdf.z_index || 0);
+          const isSidebarOpen = openPdfSidebarId === pdf.id;
+          const pdfZIndex = isSidebarOpen ? 180 : (isSelected || isHighlighted ? 150 : 40 + (pdf.z_index || 0));
           return (
             <div
               key={pdf.id}
@@ -4603,12 +5244,12 @@ export default function Canvas() {
                 height: 0,
                 zIndex: pdfZIndex,
                 opacity: isMatched ? 1 : 0.15,
-                pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: pdf.id, type: "pdf" })}
               onPointerLeave={() => setHoveredNode(null)}
               onContextMenu={(e) => {
-                if (!isCanvasInteractMode) return;
+                if (!isNodeInteractive) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -4640,6 +5281,8 @@ export default function Canvas() {
                 isSelected={selectedNodes.some((n) => n.id === pdf.id && n.type === "pdf")}
                 isPinned={pinnedNodeIds.has(pdf.id)}
                 isDragging={isPdfDragging}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={(isOpen) => setOpenPdfSidebarId(isOpen ? pdf.id : null)}
               />
             </div>
           );
@@ -4668,12 +5311,12 @@ export default function Canvas() {
                 height: 0,
                 zIndex: imageZIndex,
                 opacity: isMatched ? 1 : 0.15,
-                pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: image.id, type: "image" })}
               onPointerLeave={() => setHoveredNode(null)}
               onContextMenu={(e) => {
-                if (!isCanvasInteractMode) return;
+                if (!isNodeInteractive) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -4726,12 +5369,12 @@ export default function Canvas() {
                 height: 0,
                 zIndex: noteZIndex,
                 opacity: isMatched ? 1 : 0.15,
-                pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: note.id, type: "note" })}
               onPointerLeave={() => setHoveredNode(null)}
               onContextMenu={(e) => {
-                if (!isCanvasInteractMode) return;
+                if (!isNodeInteractive) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -4823,30 +5466,7 @@ export default function Canvas() {
               </marker>
             ))}
           </defs>
-          {/* Glowing timeline curved paths */}
-          {showTimeline && filteredBooks.map((book, i) => {
-            if (i < filteredBooks.length - 1) {
-              const nextBook = filteredBooks[i + 1];
-              const x1 = book.x_pos + 96;
-              const y1 = book.y_pos + 150;
-              const x2 = nextBook.x_pos + 96;
-              const y2 = nextBook.y_pos + 150;
-              const pathData = getBezierPath(x1, y1, x2, y2);
-              const isMatched = getBookMatch(book) || getBookMatch(nextBook);
-              return (
-                <path
-                  key={`line-${book.id}`}
-                  d={pathData}
-                  fill="none"
-                  stroke="rgba(255, 255, 255, 0.15)"
-                  strokeWidth="1.5"
-                  className="flow-line-timeline"
-                  style={{ opacity: isMatched ? 1 : 0.15, transition: "opacity 0.3s" }}
-                />
-              );
-            }
-            return null;
-          })}
+
 
           {/* Glowing quote connection curves */}
           {showConnections && filteredQuotes.map((quote) => {
@@ -4873,24 +5493,8 @@ export default function Canvas() {
 
           {/* Custom knowledge graph connection lines */}
           {filteredLinks.map((link) => {
-            const sourceNode = link.source_type === "book" 
-              ? books.find(b => b.id === link.source_id)
-              : (link.source_type === "pdf" 
-                ? pdfs.find(p => p.id === link.source_id) 
-                : (link.source_type === "image" 
-                  ? images.find(img => img.id === link.source_id) 
-                  : (link.source_type === "quote" 
-                    ? quotes.find(q => q.id === link.source_id) 
-                    : notes.find(n => n.id === link.source_id))));
-            const targetNode = link.target_type === "book"
-              ? books.find(b => b.id === link.target_id)
-              : (link.target_type === "pdf" 
-                ? pdfs.find(p => p.id === link.target_id) 
-                : (link.target_type === "image" 
-                  ? images.find(img => img.id === link.target_id) 
-                  : (link.target_type === "quote" 
-                    ? quotes.find(q => q.id === link.target_id) 
-                    : notes.find(n => n.id === link.target_id))));
+            const sourceNode = findNodeByIdAndType(link.source_id, link.source_type);
+            const targetNode = findNodeByIdAndType(link.target_id, link.target_type);
 
             if (!sourceNode || !targetNode) return null;
 
@@ -5323,9 +5927,7 @@ export default function Canvas() {
 
           {/* Active drawing connection preview line */}
           {connectionSource && (() => {
-            const sourceNode = connectionSource.type === "book"
-              ? books.find(b => b.id === connectionSource.id)
-              : (connectionSource.type === "pdf" ? pdfs.find(p => p.id === connectionSource.id) : notes.find(n => n.id === connectionSource.id));
+            const sourceNode = findNodeByIdAndType(connectionSource.id, connectionSource.type);
             if (!sourceNode) return null;
 
             const edges = getEdgeCoordinates(sourceNode, connectionSource.type);
@@ -5362,32 +5964,51 @@ export default function Canvas() {
             const strokeColor = isHighlighter 
               ? getHexWithOpacity(drawing.color, 0.4) 
               : drawing.color;
+            const isEraseMode = isHandwritingMode && brushMode === "erase";
+            const isHovered = isEraseMode && hoveredDrawingId === drawing.id;
             return (
-              <path
-                key={`drawing-${drawing.id}`}
-                d={drawing.path_data}
-                stroke={strokeColor}
-                strokeWidth={drawing.stroke_width}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`drawing-stroke ${isHandwritingMode && brushMode === "erase" ? "cursor-pointer hover:opacity-50 hover:stroke-red-500 transition-colors" : ""}`}
-                style={{ 
-                  pointerEvents: isHandwritingMode ? "auto" : "none" 
-                }}
-                onPointerDown={(e) => {
-                  if (isHandwritingMode && brushMode === "erase") {
-                    e.stopPropagation();
-                    handleDeleteStroke(drawing.id);
-                  }
-                }}
-                onPointerEnter={(e) => {
-                  if (isHandwritingMode && brushMode === "erase" && e.buttons === 1) {
-                    e.stopPropagation();
-                    handleDeleteStroke(drawing.id);
-                  }
-                }}
-              />
+              <g key={`drawing-${drawing.id}`}>
+                {/* Thick invisible path for robust erasing */}
+                {isEraseMode && (
+                  <path
+                    d={drawing.path_data}
+                    stroke="transparent"
+                    strokeWidth={Math.max(drawing.stroke_width + 24, 28)}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="cursor-pointer"
+                    style={{ pointerEvents: "auto" }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      handleDeleteStroke(drawing.id);
+                    }}
+                    onPointerEnter={(e) => {
+                      setHoveredDrawingId(drawing.id);
+                      if (e.buttons === 1) {
+                        e.stopPropagation();
+                        handleDeleteStroke(drawing.id);
+                      }
+                    }}
+                    onPointerLeave={() => {
+                      setHoveredDrawingId(null);
+                    }}
+                  />
+                )}
+                {/* Visible path */}
+                <path
+                  d={drawing.path_data}
+                  stroke={isHovered ? "#ef4444" : strokeColor}
+                  strokeWidth={drawing.stroke_width}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="drawing-stroke transition-colors pointer-events-none"
+                  style={{
+                    opacity: isHovered ? 0.5 : undefined
+                  }}
+                />
+              </g>
             );
           })}
 
@@ -5421,12 +6042,12 @@ export default function Canvas() {
                 height: 0,
                 zIndex: quoteZIndex,
                 opacity: isMatched ? 1 : 0.15,
-                pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: quote.id, type: "quote" })}
               onPointerLeave={() => setHoveredNode(null)}
               onContextMenu={(e) => {
-                if (!isCanvasInteractMode) return;
+                if (!isNodeInteractive) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -5469,12 +6090,12 @@ export default function Canvas() {
                 height: 0,
                 zIndex: bookZIndex,
                 opacity: isMatched ? 1 : 0.15,
-                pointerEvents: isCanvasInteractMode ? (isMatched ? "auto" : "none") : "none",
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
               }}
               onPointerEnter={() => setHoveredNode({ id: book.id, type: "book" })}
               onPointerLeave={() => setHoveredNode(null)}
               onContextMenu={(e) => {
-                if (!isCanvasInteractMode) return;
+                if (!isNodeInteractive) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -5499,6 +6120,57 @@ export default function Canvas() {
                 isHighlighted={teleportHighlightNodeId === book.id}
                 isSelected={selectedNodes.some((n) => n.id === book.id && n.type === "book")}
                 isPinned={pinnedNodeIds.has(book.id)}
+              />
+            </div>
+          );
+        })}
+
+        {filteredMovies.map((movie) => {
+          const isMatched = getMovieMatch(movie);
+          const isSelected = selectedNodes.some((n) => n.id === movie.id && n.type === "movie");
+          const isHighlighted = teleportHighlightNodeId === movie.id;
+          const movieZIndex = isSelected || isHighlighted ? 150 : 50 + (movie.z_index || 0);
+          return (
+            <div
+              key={movie.id}
+              className="transition-all duration-300"
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+                zIndex: movieZIndex,
+                opacity: isMatched ? 1 : 0.15,
+                pointerEvents: isNodeInteractive ? (isMatched ? "auto" : "none") : "none",
+              }}
+              onPointerEnter={() => setHoveredNode({ id: movie.id, type: "movie" })}
+              onPointerLeave={() => setHoveredNode(null)}
+              onContextMenu={(e) => {
+                if (!isNodeInteractive) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = canvasRef.current.getBoundingClientRect();
+                setContextMenu({
+                  x: e.clientX - rect.left,
+                  y: e.clientY - rect.top,
+                  canvasX: (e.clientX - rect.left - pan.x) / scale,
+                  canvasY: (e.clientY - rect.top - pan.y) / scale,
+                  type: "movie",
+                  targetId: movie.id,
+                  item: movie
+                });
+              }}
+            >
+              <MovieNode
+                movie={movie}
+                onDragStart={handleItemDragStart}
+                onStartConnection={handleStartConnection}
+                isFocused={false}
+                onToggleFocus={handleNodeToggleFocus}
+                isHighlighted={isHighlighted}
+                isSelected={isSelected}
+                isPinned={pinnedNodeIds.has(movie.id)}
               />
             </div>
           );
@@ -5675,14 +6347,15 @@ export default function Canvas() {
         onOpen={() => setShowSearchModal(true)}
         onClose={() => setShowSearchModal(false)}
         onAddBook={handleAddBook}
+        onAddMovie={handleAddMovie}
         onAddNote={handleCreateNote}
-        onToggleTimeline={() => setShowTimeline((prev) => !prev)}
         onToggleConnections={() => setShowConnections((prev) => !prev)}
         onResetViewport={() => { setPan({ x: 0, y: 0 }); setScale(1); }}
         onEnterDrawMode={() => setIsDrawingMode((prev) => !prev)}
         onZoomIn={() => setScale((prev) => Math.min(prev + 0.15, 3))}
         onZoomOut={() => setScale((prev) => Math.max(prev - 0.15, 0.15))}
         books={books}
+        movies={movies}
         notes={notes}
         areas={areas}
         pdfs={pdfs}
@@ -5741,15 +6414,6 @@ export default function Canvas() {
               <span>⏹</span> GROUP_ZONE
             </button>
 
-            {/* Export Selection Action */}
-            <button
-              type="button"
-              onClick={handleBulkExport}
-              className="px-2.5 py-1.5 bg-white/5 border border-white/10 hover:border-[#a855f7] hover:bg-white/10 text-white rounded transition-all cursor-pointer flex items-center gap-1"
-              title="Export selected notes & reviews to a unified Markdown document"
-            >
-              <span>↓</span> EXPORT_COMPILATION
-            </button>
 
             {/* Delete Action */}
             <button
@@ -5842,16 +6506,7 @@ export default function Canvas() {
                     >
                       <span>⏹</span> <span>GROUP INTO ZONE</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleBulkExport();
-                        setContextMenu(null);
-                      }}
-                      className="text-left text-gray-300 hover:text-purple-400 hover:bg-white/5 px-2.5 py-1.5 rounded flex items-center transition-colors cursor-pointer gap-2"
-                    >
-                      <span>↓</span> <span>EXPORT COMPILATION</span>
-                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
@@ -6881,7 +7536,7 @@ export default function Canvas() {
           onClick={() => setShowShortcutsHelp(false)}
         >
           <div 
-            className="aero-panel w-full max-w-lg mx-4 bg-[#0a0a0af5] border border-white/10 p-5 text-white flex flex-col max-h-[85vh]"
+            className="aero-panel w-full max-w-4xl mx-4 bg-[#0a0a0af5] border border-white/10 p-5 text-white flex flex-col max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -6899,75 +7554,79 @@ export default function Canvas() {
             </div>
 
             {/* Scrollable cheatsheet content */}
-            <div className="overflow-y-auto pr-1 text-xs space-y-4 leading-relaxed font-sans">
-              
-              {/* Category 1: Navigation */}
-              <div>
-                <h4 className="text-[#00aaff] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
-                  1. Camera & Navigation
-                </h4>
-                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Pan Workspace</span><span className="text-white">Drag Empty Canvas</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Zoom Camera</span><span className="text-white">Mouse Scroll wheel</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Reset Viewport</span><span className="text-white">HOME in Command Center</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Snap View to Node</span><span className="text-white">Click FOCUS in Workspace Index</span></div>
+            <div className="overflow-y-auto pr-1 text-xs grid grid-cols-1 lg:grid-cols-2 gap-6 leading-relaxed font-sans custom-scrollbar">
+              {/* Column 1 */}
+              <div className="space-y-4">
+                {/* Category 1: Camera & Navigation */}
+                <div>
+                  <h4 className="text-[#00aaff] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                    1. Camera & Navigation
+                  </h4>
+                  <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Pan Workspace</span><span className="text-white text-left sm:text-right font-semibold">Drag Empty Canvas</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Zoom Camera</span><span className="text-white text-left sm:text-right font-semibold">Mouse Scroll wheel</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Reset Viewport</span><span className="text-white text-left sm:text-right font-semibold">HOME in Command Center</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Snap View to Node</span><span className="text-white text-left sm:text-right font-semibold">Click FOCUS in Workspace Index</span></div>
+                  </div>
+                </div>
+
+                {/* Category 2: Gestures */}
+                <div>
+                  <h4 className="text-[#22c55e] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                    2. Board Editing Gestures
+                  </h4>
+                  <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Move Modules</span><span className="text-white text-left sm:text-right font-semibold">Drag Book / Note Header</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Resize Note card</span><span className="text-white text-left sm:text-right font-semibold">Drag bottom-right corner (↘)</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Grid Snapping</span><span className="text-white text-left sm:text-right font-semibold">Toggled via SNAP TO GRID checkbox</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Spawn Zone (Area)</span><span className="text-white text-left sm:text-right font-semibold">Drag-draw box (Drawing Mode ON)</span></div>
+                  </div>
+                </div>
+
+                {/* Category 5: Local File Sync */}
+                <div>
+                  <h4 className="text-[#ef4444] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                    5. Local Notes Sync Engine
+                  </h4>
+                  <p className="text-[9px] text-gray-400 mb-1 leading-normal font-sans normal-case">
+                    All board modifications are compiled to Obsidian-friendly Markdown files in real-time:
+                  </p>
+                  <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Book Reviews</span><span className="text-white text-left sm:text-right font-semibold">./reviews/*.md</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Index Notes</span><span className="text-white text-left sm:text-right font-semibold">./notes/*.md</span></div>
+                  </div>
                 </div>
               </div>
 
-              {/* Category 2: Gestures */}
-              <div>
-                <h4 className="text-[#22c55e] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
-                  2. Board Editing Gestures
-                </h4>
-                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Move Modules</span><span className="text-white">Drag Book / Note Header</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Resize Note card</span><span className="text-white">Drag bottom-right corner (↘)</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Grid Snapping</span><span className="text-white">Toggled via SNAP TO GRID checkbox</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Spawn Zone (Area)</span><span className="text-white">Drag-draw box (Drawing Mode ON)</span></div>
+              {/* Column 2 */}
+              <div className="space-y-4">
+                {/* Category 3: Connections & Edge Routing */}
+                <div>
+                  <h4 className="text-[#a855f7] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                    3. Connections & Edge Routing
+                  </h4>
+                  <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Create Connection</span><span className="text-white text-left sm:text-right font-semibold">Drag from card boundary connector dot</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Midpoint Controls HUD</span><span className="text-white text-left sm:text-right font-semibold">Hover cursor over link path line</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Toggle Arrowhead</span><span className="text-white text-left sm:text-right font-semibold">Click Arrow cycle button (— / ➡ / ↔)</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Modify Text Label</span><span className="text-white text-left sm:text-right font-semibold">Double-click label badge (Esc to abort)</span></div>
+                  </div>
+                </div>
+
+                {/* Category 4: Focus & Presentation Modes */}
+                <div>
+                  <h4 className="text-[#eab308] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
+                    4. Advanced Modes & Filtering
+                  </h4>
+                  <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Command Console</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">Cmd/Ctrl + K</kbd></span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Isolate Node / Area</span><span className="text-white text-left sm:text-right font-semibold">Click Eye icon (👁) in Node/Area header</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Slideshow Navigation</span><span className="text-white text-left sm:text-right font-semibold">Space / ➡ (Next), ⬅ (Prev), Esc (Exit)</span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Handwriting Mode</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">H</kbd></span></div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 py-0.5"><span className="text-gray-400">Brush / Eraser Toggle</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">B</kbd> / <kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">E</kbd></span></div>
+                  </div>
                 </div>
               </div>
-
-              {/* Category 3: Mind-Map Connections */}
-              <div>
-                <h4 className="text-[#a855f7] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
-                  3. Connections & Edge Routing
-                </h4>
-                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Create Connection</span><span className="text-white">Drag from card boundary connector dot</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Midpoint Controls HUD</span><span className="text-white">Hover cursor over link path line</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Toggle Arrowhead</span><span className="text-white">Click Arrow cycle button (— / ➡ / ↔)</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Modify Text Label</span><span className="text-white">Double-click label badge (Esc to abort)</span></div>
-                </div>
-              </div>
-
-              {/* Category 4: Focus & Presentation Modes */}
-              <div>
-                <h4 className="text-[#eab308] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
-                  4. Advanced Modes & Filtering
-                </h4>
-                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Command Console</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">Cmd/Ctrl + K</kbd></span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Isolate Node / Area</span><span className="text-white">Click Eye icon (👁) in Node/Area header</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Slideshow Navigation</span><span className="text-white">Space / ➡ (Next), ⬅ (Prev), Esc (Exit)</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Handwriting Mode</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">H</kbd></span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Brush / Eraser Toggle</span><span><kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">B</kbd> / <kbd className="bg-white/10 px-1.5 py-0.5 rounded text-[9px] border border-white/10 text-white font-mono">E</kbd></span></div>
-                </div>
-              </div>
-
-              {/* Category 5: Local File Sync */}
-              <div>
-                <h4 className="text-[#ef4444] font-semibold font-mono tracking-wider text-[10px] uppercase mb-1.5 border-b border-white/5 pb-1">
-                  5. Local Notes Sync Engine
-                </h4>
-                <p className="text-[9px] text-gray-400 mb-1 leading-normal font-sans normal-case">
-                  All board modifications are compiled to Obsidian-friendly Markdown files in real-time:
-                </p>
-                <div className="space-y-1.5 text-gray-300 font-mono text-[10px]">
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Book Reviews</span><span className="text-white">./reviews/*.md</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-400">Index Notes</span><span className="text-white">./notes/*.md</span></div>
-                </div>
-              </div>
-
             </div>
 
             {/* Footer */}
@@ -6996,12 +7655,27 @@ export default function Canvas() {
         />
       )}
 
+      {selectedMovie && (
+        <ReviewModal
+          item={selectedMovie}
+          type="movie"
+          quotes={quotes.filter((q) => q.movie_id === selectedMovie.id)}
+          onClose={() => setSelectedMovie(null)}
+          onSave={handleUpdateMovie}
+          onExtractQuote={handleExtractMovieQuote}
+          onDelete={handleDeleteMovie}
+        />
+      )}
+
       {/* Floating Workspace Minimap */}
       <div className={`transition-all duration-300 ${isPresentationMode ? "opacity-0 translate-y-full pointer-events-none" : ""}`}>
         <Minimap
           books={filteredBooks}
+          movies={filteredMovies}
           notes={filteredNotes}
           areas={filteredAreas}
+          pdfs={filteredPdfs}
+          images={filteredImages}
           pan={pan}
           scale={scale}
           setPan={setPan}
@@ -7018,6 +7692,7 @@ export default function Canvas() {
             <div className="hud-text text-[#00aaff] mb-4 uppercase tracking-widest border-b border-white/10 pb-2">
               {activeDialog.type === "create-zone" && "System // Create Zone"}
               {activeDialog.type === "confirm-delete-book" && "System // Decommission Book"}
+              {activeDialog.type === "confirm-delete-movie" && "System // Decommission Movie"}
               {activeDialog.type === "confirm-delete-area" && "System // Decommission Zone"}
               {activeDialog.type === "confirm-delete-note" && "System // Decommission Note"}
               {activeDialog.type === "confirm-delete-pdf" && "System // Decommission PDF"}
@@ -7091,11 +7766,13 @@ export default function Canvas() {
               </div>
             )}
 
-            {(activeDialog.type === "confirm-delete-book" || activeDialog.type === "confirm-delete-area" || activeDialog.type === "confirm-delete-note" || activeDialog.type === "confirm-delete-pdf" || activeDialog.type === "confirm-delete-image") && (
+            {(activeDialog.type === "confirm-delete-book" || activeDialog.type === "confirm-delete-movie" || activeDialog.type === "confirm-delete-area" || activeDialog.type === "confirm-delete-note" || activeDialog.type === "confirm-delete-pdf" || activeDialog.type === "confirm-delete-image") && (
               <div className="space-y-4">
                 <p className="text-xs text-gray-300 leading-relaxed">
                   {activeDialog.type === "confirm-delete-book"
                     ? "Are you sure you want to decommission this book module? All associated quote fragments will be permanently purged."
+                    : activeDialog.type === "confirm-delete-movie"
+                    ? "Are you sure you want to decommission this movie module? All associated quote fragments will be permanently purged."
                     : activeDialog.type === "confirm-delete-note"
                     ? "Are you sure you want to decommission this index card note?"
                     : activeDialog.type === "confirm-delete-pdf"
@@ -7122,6 +7799,15 @@ export default function Canvas() {
                           setBooks((prev) => prev.filter((b) => b.id !== activeDialog.bookId));
                           setQuotes((prev) => prev.filter((q) => q.book_id !== activeDialog.bookId));
                           setSelectedBook(null);
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      } else if (activeDialog.type === "confirm-delete-movie") {
+                        try {
+                          await fetch(`/api/movies?id=${activeDialog.movieId}`, { method: "DELETE" });
+                          setMovies((prev) => prev.filter((m) => m.id !== activeDialog.movieId));
+                          setQuotes((prev) => prev.filter((q) => q.movie_id !== activeDialog.movieId));
+                          setSelectedMovie(null);
                         } catch (err) {
                           console.error(err);
                         }

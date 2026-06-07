@@ -8,14 +8,15 @@ export default function SearchModal({
   onOpen: controlledOnOpen,
   onClose: controlledOnClose,
   onAddBook,
+  onAddMovie,
   onAddNote,
-  onToggleTimeline,
   onToggleConnections,
   onResetViewport,
   onEnterDrawMode,
   onZoomIn,
   onZoomOut,
   books = [],
+  movies = [],
   notes = [],
   areas = [],
   pdfs = [],
@@ -81,14 +82,7 @@ export default function SearchModal({
       action: () => onZoomOut(),
       hotkey: "SCROLL",
     },
-    {
-      id: "cmd-toggle-timeline",
-      title: "TOGGLE CHRONOLOGICAL TIMELINE",
-      subtitle: "HIDE OR SHOW CONNECTING DASHED GRID LINES",
-      icon: <Eye size={16} className="text-gray-400" />,
-      action: () => onToggleTimeline(),
-      hotkey: "HUD",
-    },
+
     {
       id: "cmd-toggle-links",
       title: "TOGGLE QUOTE SATELLITE LINKS",
@@ -162,11 +156,38 @@ export default function SearchModal({
     }
   };
 
+  const searchMovies = async (searchQuery) => {
+    const term = searchQuery.trim();
+    if (!term || loading) return;
+
+    setLoading(true);
+    setResults([]);
+    setSelectedIndex(0);
+
+    try {
+      const res = await fetch(
+        `/api/movies/search?q=${encodeURIComponent(term)}`
+      );
+      const data = await res.json();
+      const apiMovies = data.map((item) => ({
+        ...item,
+        isMovie: true,
+      }));
+      setResults(apiMovies);
+    } catch (err) {
+      console.error("IMDb Query failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleActionTrigger = (item) => {
     if (item.isLocal) {
       if (onTeleport) onTeleport(item.id, item.type);
     } else if (item.isBook) {
       onAddBook(item);
+    } else if (item.isMovie) {
+      onAddMovie(item);
     } else if (item.action) {
       item.action();
     }
@@ -200,6 +221,18 @@ export default function SearchModal({
         type: "book",
         isLocal: true,
         cover_url: b.cover_url,
+        hotkey: "JUMP"
+      }));
+
+    const localMovies = movies
+      .filter(m => (m.title && m.title.toLowerCase().includes(term)) || (m.director && m.director.toLowerCase().includes(term)))
+      .map(m => ({
+        id: m.id,
+        title: m.title.toUpperCase(),
+        subtitle: `MOVIE BY ${m.director ? m.director.toUpperCase() : "UNKNOWN"} [ON CANVAS]`,
+        type: "movie",
+        isLocal: true,
+        cover_url: m.cover_url,
         hotkey: "JUMP"
       }));
 
@@ -266,10 +299,10 @@ export default function SearchModal({
         hotkey: "JUMP"
       }));
 
-    const localMatches = [...localBooks, ...localNotes, ...localAreas, ...localPdfs, ...localImages, ...localQuotes];
+    const localMatches = [...localBooks, ...localMovies, ...localNotes, ...localAreas, ...localPdfs, ...localImages, ...localQuotes];
 
     // If we haven't fetched remote results, we show local matches first, 
-    // then an option to search Open Library, then matching system commands
+    // then options to search Open Library or IMDb, then matching system commands
     if (results.length === 0) {
       const display = [...localMatches];
       
@@ -282,6 +315,17 @@ export default function SearchModal({
         action: () => searchBooks(query),
         isTrigger: true,
         hotkey: "API"
+      });
+
+      // IMDb Movie search option
+      display.push({
+        id: "cmd-search-imdb",
+        title: `QUERY IMDB FOR: "${query.toUpperCase()}"`,
+        subtitle: "SEARCH REMOTE MOVIE DATABASE FOR POSTERS TO ADD",
+        icon: <Sparkles size={16} className="text-yellow-400" />,
+        action: () => searchMovies(query),
+        isTrigger: true,
+        hotkey: "IMDB"
       });
 
       // Filtered system commands

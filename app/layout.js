@@ -4,7 +4,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata = {
-  title: "Aether - Book Review Platform",
+  title: "Apiron - Book Review Platform",
   description: "Personal infinite canvas book review platform.",
 };
 

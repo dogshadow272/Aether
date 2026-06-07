@@ -12,17 +12,17 @@ export default function TestPage() {
   const initEditor = (html) => {
     if (!editorRef.current) return null;
     editorRef.current.innerHTML = html;
-    
+
     // Position caret in the first text node or block
     const selection = window.getSelection();
     const range = document.createRange();
-    
+
     let textNode = null;
     const walk = document.createTreeWalker(editorRef.current, NodeFilter.SHOW_TEXT);
     if (walk.nextNode()) {
       textNode = walk.currentNode;
     }
-    
+
     if (textNode) {
       range.setStart(textNode, textNode.textContent.length);
     } else if (editorRef.current.firstChild) {
@@ -33,7 +33,7 @@ export default function TestPage() {
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
-    
+
     return textNode || editorRef.current;
   };
 
@@ -41,18 +41,18 @@ export default function TestPage() {
     const event = new KeyboardEvent("keydown", { key, bubbles: true, ...options });
     // Mock read-only properties currentTarget and target
     Object.defineProperty(event, "currentTarget", { value: editorRef.current, configurable: true });
-    
+
     const sel = window.getSelection();
     const targetNode = (sel && sel.rangeCount > 0) ? sel.getRangeAt(0).startContainer : editorRef.current;
     Object.defineProperty(event, "target", { value: targetNode, configurable: true });
-    
+
     return event;
   };
 
   const runSuite = async () => {
     if (running) return;
     setRunning(true);
-    
+
     const results = [];
     let passedCount = 0;
     let failedCount = 0;
@@ -65,13 +65,13 @@ export default function TestPage() {
         run: () => {
           initEditor("<div>#</div>");
           const event = createMockEvent(" ");
-          
-          handleContentEditableKeyDown(event, () => {});
-          
+
+          handleContentEditableKeyDown(event, () => { });
+
           const html = editorRef.current.innerHTML.toLowerCase();
           const hasH1 = html.includes("<h1") || editorRef.current.querySelector("h1");
           const cleanedText = editorRef.current.textContent.trim();
-          
+
           if (hasH1 && !cleanedText.includes("#")) {
             return { pass: true, detail: `Result HTML: ${html}` };
           }
@@ -85,12 +85,12 @@ export default function TestPage() {
         run: () => {
           initEditor("<div>&gt;</div>");
           const event = createMockEvent(" ");
-          
-          handleContentEditableKeyDown(event, () => {});
-          
+
+          handleContentEditableKeyDown(event, () => { });
+
           const html = editorRef.current.innerHTML.toLowerCase();
           const hasBlockquote = html.includes("<blockquote") || editorRef.current.querySelector("blockquote");
-          
+
           if (hasBlockquote && !editorRef.current.textContent.includes(">")) {
             return { pass: true, detail: `Result HTML: ${html}` };
           }
@@ -104,12 +104,12 @@ export default function TestPage() {
         run: () => {
           initEditor("<div>---</div>");
           const event = createMockEvent(" ");
-          
-          handleContentEditableKeyDown(event, () => {});
-          
+
+          handleContentEditableKeyDown(event, () => { });
+
           const html = editorRef.current.innerHTML.toLowerCase();
           const hasHR = html.includes("<hr") || editorRef.current.querySelector("hr");
-          
+
           if (hasHR) {
             return { pass: true, detail: `Result HTML: ${html}` };
           }
@@ -122,7 +122,7 @@ export default function TestPage() {
         desc: "Press Enter at the end of H1, verify it inserts a clean body div (not H1)",
         run: () => {
           initEditor("<h1>My Heading</h1>");
-          
+
           // Place selection at the end of the text
           const selection = window.getSelection();
           const range = document.createRange();
@@ -133,7 +133,7 @@ export default function TestPage() {
           selection.addRange(range);
 
           const event = createMockEvent("Enter");
-          handleContentEditableKeyDown(event, () => {});
+          handleContentEditableKeyDown(event, () => { });
 
           const html = editorRef.current.innerHTML.toLowerCase();
           const children = editorRef.current.children;
@@ -151,7 +151,7 @@ export default function TestPage() {
         desc: "Press Enter on active checkbox line, verify it inserts a new unchecked checkbox",
         run: () => {
           initEditor('<div class="flex items-start gap-2 my-1"><input type="checkbox" checked="checked" /><span>Task Item</span></div>');
-          
+
           const selection = window.getSelection();
           const range = document.createRange();
           const span = editorRef.current.querySelector("span");
@@ -161,11 +161,11 @@ export default function TestPage() {
           selection.addRange(range);
 
           const event = createMockEvent("Enter");
-          handleContentEditableKeyDown(event, () => {});
+          handleContentEditableKeyDown(event, () => { });
 
           const html = editorRef.current.innerHTML.toLowerCase();
           const checkboxes = editorRef.current.querySelectorAll('input[type="checkbox"]');
-          
+
           if (checkboxes.length === 2 && !checkboxes[1].checked) {
             return { pass: true, detail: `Result HTML: ${html}` };
           }
@@ -178,7 +178,7 @@ export default function TestPage() {
         desc: "Press Enter on empty checkbox list line, verify conversion to standard div (exit list)",
         run: () => {
           initEditor('<div class="flex items-start gap-2 my-1"><input type="checkbox" /><span>&nbsp;</span></div>');
-          
+
           const selection = window.getSelection();
           const range = document.createRange();
           const span = editorRef.current.querySelector("span");
@@ -188,7 +188,7 @@ export default function TestPage() {
           selection.addRange(range);
 
           const event = createMockEvent("Enter");
-          handleContentEditableKeyDown(event, () => {});
+          handleContentEditableKeyDown(event, () => { });
 
           const html = editorRef.current.innerHTML.toLowerCase();
           const checkboxes = editorRef.current.querySelectorAll('input[type="checkbox"]');
@@ -205,7 +205,7 @@ export default function TestPage() {
         desc: "Press Backspace at start of checkbox text, verify conversion to standard div",
         run: () => {
           initEditor('<div class="flex items-start gap-2 my-1"><input type="checkbox" /><span>Task</span></div>');
-          
+
           const selection = window.getSelection();
           const range = document.createRange();
           const span = editorRef.current.querySelector("span");
@@ -215,7 +215,7 @@ export default function TestPage() {
           selection.addRange(range);
 
           const event = createMockEvent("Backspace");
-          handleContentEditableKeyDown(event, () => {});
+          handleContentEditableKeyDown(event, () => { });
 
           const html = editorRef.current.innerHTML.toLowerCase();
           const checkboxes = editorRef.current.querySelectorAll('input[type="checkbox"]');
@@ -255,28 +255,27 @@ export default function TestPage() {
   return (
     <div className="w-screen h-screen bg-[#050505] text-white flex flex-col p-8 overflow-y-auto select-none font-sans">
       <div className="max-w-4xl mx-auto w-full flex flex-col gap-6">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-widest text-white">AETHER_OS // WYSIWYG // TEST_RUNNER</h1>
+            <h1 className="text-2xl font-bold tracking-widest text-white">APIRON_OS // WYSIWYG // TEST_RUNNER</h1>
             <p className="text-xs text-gray-500 font-mono mt-1">AUTOMATED CORE EDITOR TEST SUITE</p>
           </div>
-          
+
           <div className="flex gap-3">
             <button
               onClick={runSuite}
               disabled={running}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider transition-all border ${
-                running 
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider transition-all border ${running
                   ? "bg-white/5 border-white/10 text-gray-500 cursor-not-allowed"
                   : "bg-[#00aaff]/15 hover:bg-[#00aaff]/30 border-[#00aaff]/30 text-[#00aaff]"
-              }`}
+                }`}
             >
               <Play size={14} />
               {running ? "TESTING..." : "RUN SUITE"}
             </button>
-            
+
             <button
               onClick={() => {
                 setTests([]);
@@ -334,22 +333,21 @@ export default function TestPage() {
         {/* Test Run Log */}
         <div className="flex flex-col gap-3">
           <h2 className="text-sm font-bold tracking-widest font-mono text-white">TEST_CASE_LOGS</h2>
-          
+
           <div className="flex flex-col gap-2.5">
             {tests.length === 0 && (
               <div className="aero-panel p-6 text-center text-xs text-gray-500 font-mono bg-black/20 border border-white/5">
                 NO TESTS EXECUTED YET. CLICK RUN SUITE.
               </div>
             )}
-            
+
             {tests.map((test) => (
               <div
                 key={test.id}
-                className={`aero-panel p-4 flex items-start gap-4 border transition-all ${
-                  test.pass 
-                    ? "border-green-500/20 bg-green-500/2" 
+                className={`aero-panel p-4 flex items-start gap-4 border transition-all ${test.pass
+                    ? "border-green-500/20 bg-green-500/2"
                     : "border-red-500/20 bg-red-500/2"
-                }`}
+                  }`}
               >
                 <div className="mt-0.5">
                   {test.pass ? (
@@ -358,13 +356,12 @@ export default function TestPage() {
                     <XCircle className="text-red-500" size={18} />
                   )}
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold tracking-wide font-mono text-white uppercase">{test.name}</h3>
-                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                      test.pass ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
-                    }`}>
+                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${test.pass ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+                      }`}>
                       {test.pass ? "PASSED" : "FAILED"}
                     </span>
                   </div>

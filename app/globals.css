@@ -136,10 +136,6 @@ body {
   stroke-dasharray: 4, 4;
   animation: flow 1s linear infinite;
 }
-.flow-line-timeline {
-  stroke-dasharray: 6, 6;
-  animation: flow 2.5s linear infinite;
-}
 
 /* Card Glow Themes */
 .theme-glow-blue {

@@ -18,9 +18,12 @@ function PdfNode({
   isHighlighted,
   isSelected,
   isPinned,
-  isDragging
+  isDragging,
+  isSidebarOpen,
+  onToggleSidebar
 }) {
-  const [isClipboardOpen, setIsClipboardOpen] = useState(false);
+  const [isClipboardOpenLocal, setIsClipboardOpenLocal] = useState(false);
+  const isClipboardOpen = isSidebarOpen !== undefined ? isSidebarOpen : isClipboardOpenLocal;
   const [activeTab, setActiveTab] = useState("clipboard"); // "clipboard" or "highlights"
   const [highlights, setHighlights] = useState([]);
   const [clipboardText, setClipboardText] = useState("");
@@ -178,7 +181,7 @@ function PdfNode({
         minWidth: isClipboardOpen ? 650 : 300,
         minHeight: 400,
         touchAction: "none",
-        zIndex: isSelected || isHighlighted ? 150 : 40 + (pdf.z_index || 0),
+        zIndex: isClipboardOpen ? 180 : (isSelected || isHighlighted ? 150 : 40 + (pdf.z_index || 0)),
         boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
       }}
     >
@@ -304,7 +307,13 @@ function PdfNode({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setIsClipboardOpen((prev) => !prev);
+              const nextVal = !isClipboardOpen;
+              if (onToggleSidebar) {
+                onToggleSidebar(nextVal);
+              } else {
+                setIsClipboardOpenLocal(nextVal);
+              }
+              if (onInteract) onInteract(pdf.id, "pdf", false);
             }}
             className={`transition-colors p-1 flex items-center justify-center cursor-pointer ${
               isClipboardOpen ? "text-[#a855f7]" : "text-white/40 hover:text-[#a855f7]"
@@ -346,25 +355,31 @@ function PdfNode({
             title={pdf.name}
           />
           
-          {/* Interaction Overlay only when zoomed out far to guide focus */}
-          {(canvasScale < 0.5 && !isFocused) && (
+          {/* Interaction Overlay when not selected to prevent iframe hijacking gestures */}
+          {!isSelected && (
             <div 
               onClick={(e) => {
                 e.stopPropagation();
-                if (onInteract) onInteract(pdf.id, "pdf", true);
+                if (onInteract) onInteract(pdf.id, "pdf", canvasScale < 0.6);
               }}
-              className="absolute inset-0 bg-black/40 hover:bg-black/20 backdrop-blur-[1px] flex flex-col items-center justify-center cursor-pointer transition-all duration-300 z-10"
-              title="Click to Zoom & Interact"
+              className="absolute inset-0 bg-black/40 hover:bg-black/25 backdrop-blur-[1px] flex flex-col items-center justify-center cursor-pointer transition-all duration-300 z-10"
+              title="Click to Interact & Extract Quotes"
             >
-              <div className="bg-black/85 border border-white/20 px-3 py-1.5 rounded-lg text-white font-mono text-[10px] tracking-wider shadow-lg flex items-center gap-1.5 animate-pulse">
-                <span>⌕</span> CLICK TO ZOOM & EXTRACT QUOTES
+              <div className="bg-[#0a0a0af5] border border-white/10 hover:border-[#a855f7]/30 px-3.5 py-2 rounded-lg text-white font-mono text-[9px] tracking-widest shadow-xl flex items-center gap-2">
+                <span>⚡</span> CLICK TO INTERACT & EXTRACT QUOTES
               </div>
             </div>
           )}
         </div>
         {/* Quote Extractor & Highlights Side Drawer */}
         {isClipboardOpen && (
-          <div className="w-[280px] border-l border-white/10 bg-[#070708f5] backdrop-blur-xl flex flex-col relative h-full shrink-0 select-text">
+          <div 
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              if (onInteract) onInteract(pdf.id, "pdf", false);
+            }}
+            className="w-[280px] border-l border-white/10 bg-[#070708f5] backdrop-blur-xl flex flex-col relative h-full shrink-0 select-text"
+          >
             {/* Sticky Header with Tabs */}
             <div className="flex justify-between items-center border-b border-white/10 p-3 select-none shrink-0 bg-black/40">
               <div className="flex gap-4">
@@ -393,7 +408,13 @@ function PdfNode({
               </div>
               <button
                 type="button"
-                onClick={() => setIsClipboardOpen(false)}
+                onClick={() => {
+                  if (onToggleSidebar) {
+                    onToggleSidebar(false);
+                  } else {
+                    setIsClipboardOpenLocal(false);
+                  }
+                }}
                 className="text-white/40 hover:text-white cursor-pointer transition-colors p-1"
               >
                 ✕

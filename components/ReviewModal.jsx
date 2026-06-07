@@ -4,10 +4,19 @@ import { motion } from "framer-motion";
 import { Save, Orbit, X, Bold, Italic, Underline, List, ListOrdered, FileDown } from "lucide-react";
 import { handleContentEditableKeyDown } from "../lib/editorHelpers";
 
-export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onDelete, quotes = [] }) {
-  const [review, setReview] = useState(book?.review || "");
-  const [rating, setRating] = useState(book?.rating || 0);
-  const [status, setStatus] = useState(book?.status || "To Read");
+export default function ReviewModal({
+  book, // backwards compatibility
+  item = book,
+  type = item && item.director !== undefined ? "movie" : "book",
+  onClose,
+  onSave,
+  onExtractQuote,
+  onDelete,
+  quotes = []
+}) {
+  const [review, setReview] = useState(item?.review || "");
+  const [rating, setRating] = useState(item?.rating || 0);
+  const [status, setStatus] = useState(item?.status || (type === "movie" ? "To Watch" : "To Read"));
   const [isSaving, setIsSaving] = useState(false);
   const editorRef = useRef(null);
 
@@ -24,43 +33,54 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
   const maxWords = 500;
   const progress = Math.min((wordCount / maxWords) * 100, 100);
 
-  // Initialize review text on book change
+  // Initialize review text on item change
   useEffect(() => {
-    if (editorRef.current && book) {
-      editorRef.current.innerHTML = book.review || "";
+    if (editorRef.current && item) {
+      editorRef.current.innerHTML = item.review || "";
     }
-  }, [book]);
+    setReview(item?.review || "");
+    setRating(item?.rating || 0);
+    setStatus(item?.status || (type === "movie" ? "To Watch" : "To Read"));
+  }, [item, type]);
 
   // Auto-save after 2 seconds of inactivity
-  const stableOnSave = useCallback((updatedBook) => {
-    onSave(updatedBook);
+  const stableOnSave = useCallback((updatedItem) => {
+    onSave(updatedItem);
   }, [onSave]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (review !== book?.review || rating !== book?.rating || status !== book?.status) {
+      if (review !== item?.review || rating !== item?.rating || status !== item?.status) {
         setIsSaving(true);
-        stableOnSave({ ...book, review, rating, status });
+        stableOnSave({ ...item, review, rating, status });
         setTimeout(() => setIsSaving(false), 1000);
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [review, rating, status, book, stableOnSave]);
+  }, [review, rating, status, item, stableOnSave]);
+
+  const handleClose = useCallback(() => {
+    if (review !== item?.review || rating !== item?.rating || status !== item?.status) {
+      onSave({ ...item, review, rating, status });
+    }
+    onClose();
+  }, [review, rating, status, item, onSave, onClose]);
 
   // Escape key to close
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
-        onClose();
+        handleClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [handleClose]);
 
   const handleExtract = () => {
     const selection = window.getSelection().toString();
     if (selection) {
-      onExtractQuote(book.id, selection);
+      onExtractQuote(item.id, selection);
     } else {
       alert("Highlight some text first to extract a satellite quote.");
     }
@@ -86,8 +106,13 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
     });
 
     // Compile Markdown content
-    let markdown = `# REVIEW: ${book.title.toUpperCase()}\n\n`;
-    markdown += `- **Author:** ${book.author || "Unknown"}\n`;
+    let markdown = `# REVIEW: ${item.title.toUpperCase()}\n\n`;
+    if (type === "movie") {
+      markdown += `- **Director/Cast:** ${item.director || "Unknown"}\n`;
+      markdown += `- **Year:** ${item.year || "Unknown"}\n`;
+    } else {
+      markdown += `- **Author:** ${item.author || "Unknown"}\n`;
+    }
     markdown += `- **Status:** ${status}\n`;
     markdown += `- **Rating:** ${ratingString}\n`;
     markdown += `- **Export Date:** ${exportDate}\n\n`;
@@ -109,11 +134,11 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    const sanitizedTitle = book.title
+    const sanitizedTitle = item.title
       .toLowerCase()
       .replace(/\s+/g, "_")
       .replace(/[^a-z0-9_]/g, "");
-    link.setAttribute("download", `${sanitizedTitle || "book"}_review.md`);
+    link.setAttribute("download", `${sanitizedTitle || "item"}_${type}_review.md`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -141,7 +166,7 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
     if (handled) return;
   };
 
-  if (!book) return null;
+  if (!item) return null;
 
   return (
     <div
@@ -155,11 +180,11 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
         className="w-full max-w-5xl h-[85vh] flex flex-col aero-panel bg-[#0a0a0a]"
       >
         <div className="aero-header justify-between bg-black/50">
-          <div className="hud-text text-white tracking-widest flex items-center gap-4">
-            <span>DATA_MODULE</span>
-            <span className="text-[#00aaff] opacity-60">ID: {book.id.substring(0, 8)}</span>
+          <div className="hud-text text-white tracking-widest flex items-center gap-4 font-mono">
+            <span>DATA_MODULE // {type.toUpperCase()}</span>
+            <span className="text-[#00aaff] opacity-60">ID: {item.id.substring(0, 8).toUpperCase()}</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+          <button onClick={handleClose} className="text-gray-400 hover:text-white transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -168,21 +193,21 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
           {/* Sidebar */}
           <div className="w-72 border-r border-r-white/10 p-6 flex flex-col gap-6 bg-black/30 overflow-y-auto">
             <div>
-              {book.cover_url ? (
+              {item.cover_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={book.cover_url}
-                  alt={book.title}
+                  src={item.cover_url}
+                  alt={item.title}
                   className="w-full h-auto rounded border border-white/10 mb-4"
                   style={{ boxShadow: "0 5px 20px rgba(0,0,0,0.5)" }}
                 />
               ) : (
                 <div className="w-full aspect-[2/3] bg-white/5 border border-white/10 rounded flex items-center justify-center mb-4 text-gray-500">
-                  No Cover
+                  No Poster
                 </div>
               )}
-              <h2 className="text-xl font-medium text-white mb-1 leading-tight">{book.title}</h2>
-              <p className="text-gray-400 text-sm">{book.author}</p>
+              <h2 className="text-xl font-medium text-white mb-1 leading-tight">{item.title}</h2>
+              <p className="text-gray-400 text-sm">{type === "movie" ? (item.director || item.year) : item.author}</p>
             </div>
 
             <div>
@@ -193,9 +218,19 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
                 onChange={(e) => setStatus(e.target.value)}
                 className="aero-input text-sm"
               >
-                <option value="To Read">To Read</option>
-                <option value="Reading">Reading</option>
-                <option value="Completed">Completed</option>
+                {type === "movie" ? (
+                  <>
+                    <option value="To Watch">To Watch</option>
+                    <option value="Watching">Watching</option>
+                    <option value="Watched">Watched</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="To Read">To Read</option>
+                    <option value="Reading">Reading</option>
+                    <option value="Completed">Completed</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -238,7 +273,7 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
               <button
                 id="review-decommission-btn"
                 type="button"
-                onClick={() => onDelete(book.id)}
+                onClick={() => onDelete(item.id)}
                 className="aero-button bg-red-950/40 text-red-400 hover:bg-red-900/60 border border-red-500/20 text-[10px] w-full text-center py-2 transition-all mt-2"
               >
                 DECOMMISSION MODULE
@@ -401,7 +436,7 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
               id="review-text-area"
               className="flex-1 w-full bg-transparent text-gray-200 p-8 outline-none leading-relaxed text-lg overflow-y-auto"
               style={{ fontFamily: "var(--font-sans)" }}
-              placeholder="Enter review logs here... Use '# ' for H1, '## ' for H2, '- ' for bullets, or '- [ ] ' for checkboxes."
+              placeholder={type === "movie" ? "Enter movie review logs here... Use '# ' for H1, '## ' for H2, '- ' for bullets, or '- [ ] ' for checkboxes." : "Enter review logs here... Use '# ' for H1, '## ' for H2, '- ' for bullets, or '- [ ] ' for checkboxes."}
               onInput={(e) => {
                 setReview(e.currentTarget.innerHTML);
               }}
@@ -416,7 +451,7 @@ export default function ReviewModal({ book, onClose, onSave, onExtractQuote, onD
                 style={{ width: `${progress}%`, boxShadow: "0 0 10px #00aaff" }}
               />
             </div>
-            <div className="text-right py-2 px-4 hud-text text-gray-500 bg-black/50">
+            <div className="text-right py-2 px-4 hud-text text-gray-500 bg-black/50 font-mono">
               BUFFER: {wordCount} / {maxWords}
             </div>
           </div>

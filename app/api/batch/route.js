@@ -8,11 +8,13 @@ const updateAreaCoords = db.prepare('UPDATE areas SET x_pos = @x_pos, y_pos = @y
 const updateQuoteCoords = db.prepare('UPDATE quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id');
 const updatePdfCoords = db.prepare('UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id');
 const updateImageCoords = db.prepare('UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id');
+const updateMovieCoords = db.prepare('UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id');
+const updateMovieQuoteCoords = db.prepare('UPDATE movie_quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id');
 
 export async function POST(request) {
   try {
     const data = await request.json();
-    const { books = [], notes = [], areas = [], quotes = [], pdfs = [], images = [] } = data;
+    const { books = [], notes = [], areas = [], quotes = [], pdfs = [], images = [], movies = [], movie_quotes = [] } = data;
 
     const executeBatch = db.transaction(() => {
       books.forEach((b) => {
@@ -32,6 +34,12 @@ export async function POST(request) {
       });
       images.forEach((img) => {
         updateImageCoords.run({ id: img.id, x_pos: img.x_pos, y_pos: img.y_pos, width: img.width, height: img.height });
+      });
+      movies.forEach((m) => {
+        updateMovieCoords.run({ id: m.id, x_pos: m.x_pos, y_pos: m.y_pos });
+      });
+      movie_quotes.forEach((mq) => {
+        updateMovieQuoteCoords.run({ id: mq.id, x_pos: mq.x_pos, y_pos: mq.y_pos });
       });
     });
 
