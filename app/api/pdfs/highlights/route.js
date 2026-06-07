@@ -33,7 +33,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing required highlight parameters' }, { status: 400 });
     }
 
-    const id = crypto.randomUUID();
+    const id = data.id || crypto.randomUUID();
     insertHighlightStmt.run({
       id,
       pdf_id,

@@ -14,7 +14,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const data = await request.json();
-    const id = crypto.randomUUID();
+    const id = data.id || crypto.randomUUID();
     
     const stmt = db.prepare(`
       INSERT INTO presets (id, name, pan_x, pan_y, scale)

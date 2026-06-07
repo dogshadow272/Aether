@@ -31,7 +31,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const data = await request.json();
-    const id = crypto.randomUUID();
+    const id = data.id || crypto.randomUUID();
     
     insertAreaStmt.run({
       id,

@@ -56,7 +56,7 @@ export async function POST(request) {
     await fs.writeFile(filePath, buffer);
 
     // Insert into SQLite database
-    const id = crypto.randomUUID();
+    const id = formData.get('id') || crypto.randomUUID();
     insertPdfStmt.run({
       id,
       name: originalName,

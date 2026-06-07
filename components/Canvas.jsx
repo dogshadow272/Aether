@@ -9,6 +9,7 @@ import AreaNode from "./AreaNode";
 import NoteNode from "./NoteNode";
 import PdfNode from "./PdfNode";
 import ImageNode from "./ImageNode";
+import { initDb, dbClient } from "@/lib/dbClient";
 
 const getHexWithOpacity = (hex, opacity = 1) => {
   if (!hex) return `rgba(0, 170, 255, ${opacity})`;
@@ -333,6 +334,7 @@ export default function Canvas() {
   const [tempLassoBox, setTempLassoBox] = useState(null); // { x, y, w, h }
 
   const [pdfs, setPdfs] = useState([]);
+  const [isDbReady, setIsDbReady] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggedNode, setDraggedNode] = useState(null);
   const [newlyCreatedNoteId, setNewlyCreatedNoteId] = useState(null);
@@ -676,7 +678,7 @@ export default function Canvas() {
     const cols = Math.ceil(Math.sqrt(totalToArrange.length));
     const hSpacing = 280;
     const vSpacing = 380;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [], movie_quotes: [] };
 
     totalToArrange.forEach((sel, index) => {
       const r = Math.floor(index / cols);
@@ -717,16 +719,25 @@ export default function Canvas() {
       }
     });
 
-    try {
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(batch),
-      });
-      showToast("GRID LAYOUT ALIGNMENT COMPLETED");
-    } catch (err) {
-      console.error("Bulk grid arrange failed:", err);
+    if (isDbReady) {
+      try {
+        batch.movies?.forEach((m) => dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", m));
+        batch.books?.forEach((b) => dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", b));
+        batch.notes?.forEach((n) => dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", n));
+        batch.pdfs?.forEach((p) => dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", p));
+        batch.images?.forEach((img) => dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", img));
+      } catch (err) {
+        console.error("Local bulk arrange grid write error:", err);
+      }
     }
+
+    showToast("GRID LAYOUT ALIGNMENT COMPLETED");
+
+    fetch("/api/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+    }).catch((err) => console.error("Bulk grid arrange failed to sync:", err));
   };
 
   const handleBulkArrangeCircle = async () => {
@@ -773,7 +784,7 @@ export default function Canvas() {
 
     const radius = Math.max(250, totalToArrange.length * 60);
     const angleStep = (2 * Math.PI) / totalToArrange.length;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [], movie_quotes: [] };
 
     totalToArrange.forEach((sel, index) => {
       const angle = index * angleStep;
@@ -813,16 +824,25 @@ export default function Canvas() {
       }
     });
 
-    try {
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(batch),
-      });
-      showToast("RADIAL MIND-MAP ALIGNMENT COMPLETED");
-    } catch (err) {
-      console.error("Bulk circle arrange failed:", err);
+    if (isDbReady) {
+      try {
+        batch.movies?.forEach((m) => dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", m));
+        batch.books?.forEach((b) => dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", b));
+        batch.notes?.forEach((n) => dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", n));
+        batch.pdfs?.forEach((p) => dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", p));
+        batch.images?.forEach((img) => dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", img));
+      } catch (err) {
+        console.error("Local bulk arrange circle write error:", err);
+      }
     }
+
+    showToast("RADIAL MIND-MAP ALIGNMENT COMPLETED");
+
+    fetch("/api/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+    }).catch((err) => console.error("Bulk circle arrange failed to sync:", err));
   };
 
   const handleBulkArrangeHorizontal = async () => {
@@ -864,7 +884,7 @@ export default function Canvas() {
     const minX = itemsWithCoords[0].x;
 
     const spacing = 280;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [], movie_quotes: [] };
 
     itemsWithCoords.forEach((entry, index) => {
       const targetX = Math.round((minX + index * spacing) / 20) * 20;
@@ -878,7 +898,7 @@ export default function Canvas() {
         batch.movies.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY });
       } else if (entry.sel.type === "note") {
         setNotes(prev => prev.map(n => n.id === entry.item.id ? { ...n, x_pos: targetX, y_pos: targetY } : n));
-        batch.notes.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY, width: entry.item.width || 220, height: entry.item.height || 150 });
+        batch.notes.push({ id: entry.item.id, x_pos: entry.item.id, x_pos: targetX, y_pos: targetY, width: entry.item.width || 220, height: entry.item.height || 150 });
       } else if (entry.sel.type === "pdf") {
         setPdfs(prev => prev.map(p => p.id === entry.item.id ? { ...p, x_pos: targetX, y_pos: targetY } : p));
         batch.pdfs.push({ id: entry.item.id, x_pos: targetX, y_pos: targetY, width: entry.item.width || 450, height: entry.item.height || 600 });
@@ -888,16 +908,25 @@ export default function Canvas() {
       }
     });
 
-    try {
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(batch),
-      });
-      showToast("HORIZONTAL LAYOUT ALIGNMENT COMPLETED");
-    } catch (err) {
-      console.error("Bulk horizontal arrange failed:", err);
+    if (isDbReady) {
+      try {
+        batch.movies?.forEach((m) => dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", m));
+        batch.books?.forEach((b) => dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", b));
+        batch.notes?.forEach((n) => dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: n.id, x_pos: n.x_pos, y_pos: n.y_pos }));
+        batch.pdfs?.forEach((p) => dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: p.id, x_pos: p.x_pos, y_pos: p.y_pos }));
+        batch.images?.forEach((img) => dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: img.id, x_pos: img.x_pos, y_pos: img.y_pos }));
+      } catch (err) {
+        console.error("Local bulk arrange horizontal write error:", err);
+      }
     }
+
+    showToast("HORIZONTAL LAYOUT ALIGNMENT COMPLETED");
+
+    fetch("/api/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+    }).catch((err) => console.error("Bulk horizontal arrange failed to sync:", err));
   };
 
   const handleBulkArrangeVertical = async () => {
@@ -939,7 +968,7 @@ export default function Canvas() {
     const minY = itemsWithCoords[0].y;
 
     const spacing = 240;
-    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
+    const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [], movie_quotes: [] };
 
     itemsWithCoords.forEach((entry, index) => {
       const targetX = baselineX;
@@ -963,16 +992,25 @@ export default function Canvas() {
       }
     });
 
-    try {
-      await fetch("/api/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(batch),
-      });
-      showToast("VERTICAL LAYOUT ALIGNMENT COMPLETED");
-    } catch (err) {
-      console.error("Bulk vertical arrange failed:", err);
+    if (isDbReady) {
+      try {
+        batch.movies?.forEach((m) => dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", m));
+        batch.books?.forEach((b) => dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", b));
+        batch.notes?.forEach((n) => dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: n.id, x_pos: n.x_pos, y_pos: n.y_pos }));
+        batch.pdfs?.forEach((p) => dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: p.id, x_pos: p.x_pos, y_pos: p.y_pos }));
+        batch.images?.forEach((img) => dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: img.id, x_pos: img.x_pos, y_pos: img.y_pos }));
+      } catch (err) {
+        console.error("Local bulk arrange vertical write error:", err);
+      }
     }
+
+    showToast("VERTICAL LAYOUT ALIGNMENT COMPLETED");
+
+    fetch("/api/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+    }).catch((err) => console.error("Bulk vertical arrange failed to sync:", err));
   };
 
   const handleBulkDelete = useCallback(async () => {
@@ -990,86 +1028,117 @@ export default function Canvas() {
     const quotesToDelete = currentSelection.filter(n => n.type === "quote");
     const imagesToDelete = currentSelection.filter(n => n.type === "image");
 
-    const promises = [];
+    if (isDbReady) {
+      try {
+        booksToDelete.forEach(b => {
+          dbClient.run("DELETE FROM books WHERE id = @id", { id: b.id });
+          dbClient.run("DELETE FROM quotes WHERE book_id = @id", { id: b.id });
+          dbClient.run("DELETE FROM links WHERE source_id = @id OR target_id = @id", { id: b.id });
+        });
+        moviesToDelete.forEach(m => {
+          dbClient.run("DELETE FROM movies WHERE id = @id", { id: m.id });
+          dbClient.run("DELETE FROM movie_quotes WHERE movie_id = @id", { id: m.id });
+          dbClient.run("DELETE FROM links WHERE source_id = @id OR target_id = @id", { id: m.id });
+        });
+        notesToDelete.forEach(n => {
+          dbClient.run("DELETE FROM notes WHERE id = @id", { id: n.id });
+          dbClient.run("DELETE FROM links WHERE source_id = @id OR target_id = @id", { id: n.id });
+        });
+        pdfsToDelete.forEach(p => {
+          dbClient.run("DELETE FROM pdfs WHERE id = @id", { id: p.id });
+          dbClient.run("DELETE FROM links WHERE source_id = @id OR target_id = @id", { id: p.id });
+        });
+        areasToDelete.forEach(a => {
+          dbClient.run("DELETE FROM areas WHERE id = @id", { id: a.id });
+        });
+        quotesToDelete.forEach(q => {
+          if (q.movie_id !== undefined) {
+            dbClient.run("DELETE FROM movie_quotes WHERE id = @id", { id: q.id });
+          } else {
+            dbClient.run("DELETE FROM quotes WHERE id = @id", { id: q.id });
+          }
+        });
+        imagesToDelete.forEach(img => {
+          dbClient.run("DELETE FROM images WHERE id = @id", { id: img.id });
+          dbClient.run("DELETE FROM links WHERE source_id = @id OR target_id = @id", { id: img.id });
+        });
+      } catch (err) {
+        console.error("Local SQLite bulk delete failed:", err);
+      }
+    }
 
+    const bookIds = new Set(booksToDelete.map(n => n.id));
+    const movieIds = new Set(moviesToDelete.map(n => n.id));
+    const noteIds = new Set(notesToDelete.map(n => n.id));
+    const pdfIds = new Set(pdfsToDelete.map(n => n.id));
+    const areaIds = new Set(areasToDelete.map(n => n.id));
+    const quoteIds = new Set(quotesToDelete.map(n => n.id));
+    const imageIds = new Set(imagesToDelete.map(n => n.id));
+
+    if (bookIds.size > 0) {
+      setBooks(prev => prev.filter(b => !bookIds.has(b.id)));
+      setQuotes(prev => prev.filter(q => !bookIds.has(q.book_id)));
+    }
+    if (movieIds.size > 0) {
+      setMovies(prev => prev.filter(m => !movieIds.has(m.id)));
+      setQuotes(prev => prev.filter(q => !movieIds.has(q.movie_id)));
+    }
+    if (noteIds.size > 0) {
+      setNotes(prev => prev.filter(n => !noteIds.has(n.id)));
+    }
+    if (pdfIds.size > 0) {
+      setPdfs(prev => prev.filter(p => !pdfIds.has(p.id)));
+    }
+    if (imageIds.size > 0) {
+      setImages(prev => prev.filter(img => !imageIds.has(img.id)));
+    }
+    if (areaIds.size > 0) {
+      setAreas(prev => prev.filter(a => !areaIds.has(a.id)));
+    }
+    if (quoteIds.size > 0) {
+      setQuotes(prev => prev.filter(q => !quoteIds.has(q.id)));
+    }
+
+    const allDeletedIds = new Set([...bookIds, ...movieIds, ...noteIds, ...pdfIds, ...areaIds, ...quoteIds, ...imageIds]);
+    setLinks(prev => prev.filter(l => !allDeletedIds.has(l.source_id) && !allDeletedIds.has(l.target_id)));
+
+    setSelectedNodes([]);
+    showToast(`DECOMMISSIONED ${allDeletedIds.size} SELECTION MODULES`);
+
+    // Sync in background (gracefully logging failures)
     booksToDelete.forEach(b => {
-      promises.push(fetch(`/api/books?id=${b.id}`, { method: "DELETE" }));
+      fetch(`/api/books?id=${b.id}`, { method: "DELETE" }).catch(err => console.error(err));
     });
     moviesToDelete.forEach(m => {
-      promises.push(fetch(`/api/movies?id=${m.id}`, { method: "DELETE" }));
+      fetch(`/api/movies?id=${m.id}`, { method: "DELETE" }).catch(err => console.error(err));
     });
     notesToDelete.forEach(n => {
-      promises.push(fetch(`/api/notes?id=${n.id}`, { method: "DELETE" }));
+      fetch(`/api/notes?id=${n.id}`, { method: "DELETE" }).catch(err => console.error(err));
     });
     pdfsToDelete.forEach(p => {
-      promises.push(fetch(`/api/pdfs?id=${p.id}`, { method: "DELETE" }));
+      fetch(`/api/pdfs?id=${p.id}`, { method: "DELETE" }).catch(err => console.error(err));
     });
     areasToDelete.forEach(a => {
-      promises.push(fetch(`/api/areas?id=${a.id}`, { method: "DELETE" }));
+      fetch(`/api/areas?id=${a.id}`, { method: "DELETE" }).catch(err => console.error(err));
     });
     quotesToDelete.forEach(q => {
       if (q.movie_id !== undefined) {
-        promises.push(fetch(`/api/movie_quotes?id=${q.id}`, { method: "DELETE" }));
+        fetch(`/api/movie_quotes?id=${q.id}`, { method: "DELETE" }).catch(err => console.error(err));
       } else {
-        promises.push(fetch(`/api/quotes?id=${q.id}`, { method: "DELETE" }));
+        fetch(`/api/quotes?id=${q.id}`, { method: "DELETE" }).catch(err => console.error(err));
       }
     });
     imagesToDelete.forEach(img => {
-      promises.push(fetch(`/api/images?id=${img.id}`, { method: "DELETE" }));
+      fetch(`/api/images?id=${img.id}`, { method: "DELETE" }).catch(err => console.error(err));
     });
 
-    try {
-      await Promise.all(promises);
-
-      const bookIds = new Set(booksToDelete.map(n => n.id));
-      const movieIds = new Set(moviesToDelete.map(n => n.id));
-      const noteIds = new Set(notesToDelete.map(n => n.id));
-      const pdfIds = new Set(pdfsToDelete.map(n => n.id));
-      const areaIds = new Set(areasToDelete.map(n => n.id));
-      const quoteIds = new Set(quotesToDelete.map(n => n.id));
-      const imageIds = new Set(imagesToDelete.map(n => n.id));
-
-      if (bookIds.size > 0) {
-        setBooks(prev => prev.filter(b => !bookIds.has(b.id)));
-        setQuotes(prev => prev.filter(q => !bookIds.has(q.book_id)));
-      }
-      if (movieIds.size > 0) {
-        setMovies(prev => prev.filter(m => !movieIds.has(m.id)));
-        setQuotes(prev => prev.filter(q => !movieIds.has(q.movie_id)));
-      }
-      if (noteIds.size > 0) {
-        setNotes(prev => prev.filter(n => !noteIds.has(n.id)));
-      }
-      if (pdfIds.size > 0) {
-        setPdfs(prev => prev.filter(p => !pdfIds.has(p.id)));
-      }
-      if (imageIds.size > 0) {
-        setImages(prev => prev.filter(img => !imageIds.has(img.id)));
-      }
-      if (areaIds.size > 0) {
-        setAreas(prev => prev.filter(a => !areaIds.has(a.id)));
-      }
-      if (quoteIds.size > 0) {
-        setQuotes(prev => prev.filter(q => !quoteIds.has(q.id)));
-      }
-
-      const allDeletedIds = new Set([...bookIds, ...movieIds, ...noteIds, ...pdfIds, ...areaIds, ...quoteIds, ...imageIds]);
-      setLinks(prev => prev.filter(l => !allDeletedIds.has(l.source_id) && !allDeletedIds.has(l.target_id)));
-
-      setSelectedNodes([]);
-      showToast(`DECOMMISSIONED ${allDeletedIds.size} SELECTION MODULES`);
-    } catch (err) {
-      console.error("Bulk delete failed:", err);
-      showToast("FAILED TO BULK DECOMMISSION MODULES");
-    }
-  }, [saveStateBeforeMutation, showToast]);
+  }, [saveStateBeforeMutation, showToast, isDbReady]);
 
   const handleBulkConnectToNode = async (targetId, targetType) => {
     if (selectedNodes.length === 0) return;
     saveStateBeforeMutation();
 
     const createdLinks = [];
-    const promises = [];
     const sources = selectedNodes.filter(n => !(n.id === targetId && n.type === targetType));
 
     for (const source of sources) {
@@ -1079,39 +1148,45 @@ export default function Canvas() {
       );
       if (exists) continue;
 
-      promises.push((async () => {
+      const linkId = crypto.randomUUID();
+      const newLink = {
+        id: linkId,
+        source_id: source.id,
+        source_type: source.type,
+        target_id: targetId,
+        target_type: targetType,
+        label: "",
+        type: "default",
+        arrow: "none",
+        speed: "normal",
+        shape: "curved",
+        color: null
+      };
+
+      if (isDbReady) {
         try {
-          const res = await fetch("/api/links", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_id: source.id,
-              source_type: source.type,
-              target_id: targetId,
-              target_type: targetType,
-              label: "",
-              type: "default",
-              arrow: "none",
-              speed: "normal",
-              shape: "curved"
-            })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            createdLinks.push(data);
-          }
+          dbClient.run(`
+            INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, color)
+            VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @color)
+          `, newLink);
         } catch (err) {
-          console.error("Failed to create connection in star layout:", err);
+          console.error("Local SQLite bulk connect failed:", err);
         }
-      })());
+      }
+
+      createdLinks.push(newLink);
+
+      // Sync in background
+      fetch("/api/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newLink)
+      }).catch((err) => console.error("Failed to sync connection in star layout:", err));
     }
 
-    if (promises.length > 0) {
-      await Promise.all(promises);
-      if (createdLinks.length > 0) {
-        setLinks(prev => [...prev, ...createdLinks]);
-        showToast("STAR-HUB CONNECTIONS ESTABLISHED");
-      }
+    if (createdLinks.length > 0) {
+      setLinks(prev => [...prev, ...createdLinks]);
+      showToast("STAR-HUB CONNECTIONS ESTABLISHED");
     }
   };
 
@@ -1137,7 +1212,6 @@ export default function Canvas() {
     nodesWithCoords.sort((a, b) => a.x - b.x);
 
     const createdLinks = [];
-    const promises = [];
 
     for (let i = 0; i < nodesWithCoords.length - 1; i++) {
       const source = nodesWithCoords[i];
@@ -1149,39 +1223,45 @@ export default function Canvas() {
       );
       if (exists) continue;
 
-      promises.push((async () => {
+      const linkId = crypto.randomUUID();
+      const newLink = {
+        id: linkId,
+        source_id: source.id,
+        source_type: source.type,
+        target_id: target.id,
+        target_type: target.type,
+        label: "",
+        type: "default",
+        arrow: "forward",
+        speed: "normal",
+        shape: "curved",
+        color: null
+      };
+
+      if (isDbReady) {
         try {
-          const res = await fetch("/api/links", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_id: source.id,
-              source_type: source.type,
-              target_id: target.id,
-              target_type: target.type,
-              label: "",
-              type: "default",
-              arrow: "forward",
-              speed: "normal",
-              shape: "curved"
-            })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            createdLinks.push(data);
-          }
+          dbClient.run(`
+            INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, color)
+            VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @color)
+          `, newLink);
         } catch (err) {
-          console.error("Failed to create connection in chain layout:", err);
+          console.error("Local SQLite bulk chain connect failed:", err);
         }
-      })());
+      }
+
+      createdLinks.push(newLink);
+
+      // Sync in background
+      fetch("/api/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newLink)
+      }).catch((err) => console.error("Failed to sync connection in chain layout:", err));
     }
 
-    if (promises.length > 0) {
-      await Promise.all(promises);
-      if (createdLinks.length > 0) {
-        setLinks(prev => [...prev, ...createdLinks]);
-        showToast("CHRONOLOGICAL LINK CHAIN CREATED");
-      }
+    if (createdLinks.length > 0) {
+      setLinks(prev => [...prev, ...createdLinks]);
+      showToast("CHRONOLOGICAL LINK CHAIN CREATED");
     }
   };
 
@@ -1213,65 +1293,80 @@ export default function Canvas() {
 
     const content = `<h1>${title.toUpperCase()}</h1><p>Central hub connecting related workspace modules.</p>`;
 
-    try {
-      const noteRes = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content,
-          x_pos: centerX - 110,
-          y_pos: centerY - 75,
-          width: 220,
-          height: 150,
-          color: "rgba(168, 85, 247, 0.08)"
-        })
-      });
+    const noteId = crypto.randomUUID();
+    const newNote = {
+      id: noteId,
+      content,
+      x_pos: centerX - 110,
+      y_pos: centerY - 75,
+      width: 220,
+      height: 150,
+      z_index: 0,
+      color: "rgba(168, 85, 247, 0.08)",
+      wrap_text: 1
+    };
 
-      if (!noteRes.ok) return;
-      const newNote = await noteRes.json();
-      setNotes(prev => [...prev, newNote]);
+    if (isDbReady) {
+      try {
+        dbClient.run(`
+          INSERT INTO notes (id, content, x_pos, y_pos, width, height, z_index, color, wrap_text)
+          VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @z_index, @color, @wrap_text)
+        `, newNote);
+      } catch (err) {
+        console.error("Local SQLite bulk connect hub note creation failed:", err);
+      }
+    }
 
-      const createdLinks = [];
-      const promises = [];
+    setNotes(prev => [...prev, newNote]);
 
-      selectedNodes.forEach(source => {
-        promises.push((async () => {
-          try {
-            const linkRes = await fetch("/api/links", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                source_id: source.id,
-                source_type: source.type,
-                target_id: newNote.id,
-                target_type: "note",
-                label: "",
-                type: "default",
-                arrow: "none",
-                speed: "normal",
-                shape: "curved"
-              })
-            });
-            if (linkRes.ok) {
-              const linkData = await linkRes.json();
-              createdLinks.push(linkData);
-            }
-          } catch (err) {
-            console.error("Failed to link node to new hub note:", err);
-          }
-        })());
-      });
+    fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newNote)
+    }).catch(err => console.error("Failed to sync new hub note:", err));
 
-      if (promises.length > 0) {
-        await Promise.all(promises);
-        if (createdLinks.length > 0) {
-          setLinks(prev => [...prev, ...createdLinks]);
+    const createdLinks = [];
+
+    selectedNodes.forEach(source => {
+      const linkId = crypto.randomUUID();
+      const newLink = {
+        id: linkId,
+        source_id: source.id,
+        source_type: source.type,
+        target_id: noteId,
+        target_type: "note",
+        label: "",
+        type: "default",
+        arrow: "none",
+        speed: "normal",
+        shape: "curved",
+        color: null
+      };
+
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, color)
+            VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @color)
+          `, newLink);
+        } catch (err) {
+          console.error("Local SQLite bulk connect hub link creation failed:", err);
         }
       }
-      showToast("CENTROID CONCEPT HUB MEMO CARD CREATED");
-    } catch (err) {
-      console.error("Failed to create hub note and connections:", err);
+
+      createdLinks.push(newLink);
+
+      fetch("/api/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newLink)
+      }).catch(err => console.error("Failed to link node to new hub note in background:", err));
+    });
+
+    if (createdLinks.length > 0) {
+      setLinks(prev => [...prev, ...createdLinks]);
     }
+    showToast("CENTROID CONCEPT HUB MEMO CARD CREATED");
   };
 
   const handleBulkCreateZone = async () => {
@@ -1349,26 +1444,37 @@ export default function Canvas() {
     const name = prompt("ENTER CATEGORY ZONE NAME / DESIGNATION:");
     if (!name || !name.trim()) return;
 
-    try {
-      const res = await fetch("/api/areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim().toUpperCase(),
-          x_pos: zoneX,
-          y_pos: zoneY,
-          width: zoneW,
-          height: zoneH,
-          color: "rgba(0, 170, 255, 0.08)"
-        })
-      });
-      const data = await res.json();
-      setAreas(prev => [...prev, data]);
-      setSelectedNodes(prev => [...prev, { id: data.id, type: "area" }]);
-      showToast("SELECTION GROUPED INTO CATEGORY ZONE");
-    } catch (err) {
-      console.error("Bulk create zone failed:", err);
+    const zoneId = crypto.randomUUID();
+    const newArea = {
+      id: zoneId,
+      name: name.trim().toUpperCase(),
+      x_pos: zoneX,
+      y_pos: zoneY,
+      width: zoneW,
+      height: zoneH,
+      color: "rgba(0, 170, 255, 0.08)"
+    };
+
+    if (isDbReady) {
+      try {
+        dbClient.run(`
+          INSERT INTO areas (id, name, x_pos, y_pos, width, height, color)
+          VALUES (@id, @name, @x_pos, @y_pos, @width, @height, @color)
+        `, newArea);
+      } catch (err) {
+        console.error("Local SQLite bulk create zone failed:", err);
+      }
     }
+
+    setAreas(prev => [...prev, newArea]);
+    setSelectedNodes(prev => [...prev, { id: zoneId, type: "area" }]);
+    showToast("SELECTION GROUPED INTO CATEGORY ZONE");
+
+    fetch("/api/areas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newArea)
+    }).catch(err => console.error("Bulk create zone failed to sync:", err));
   };
 
   const handleBulkExport = () => {
@@ -1784,19 +1890,83 @@ export default function Canvas() {
     }
   };
 
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
-    fetchBooks();
-    fetchMovies();
-    fetchAreas();
-    fetchNotes();
-    fetchLinks();
-    fetchPresets();
-    fetchPdfs();
-    fetchDrawings();
-    fetchImages();
-    /* eslint-enable react-hooks/set-state-in-effect */
+  const loadInitialDataFromWasm = useCallback(() => {
+    try {
+      // 1. Fetch Books
+      const booksData = dbClient.all("SELECT * FROM books");
+      setBooks(booksData);
+      
+      // 2. Fetch Quotes (associated with books)
+      const quotesData = dbClient.all("SELECT * FROM quotes");
+      setQuotes(quotesData);
+
+      // 3. Fetch Movies
+      const moviesData = dbClient.all("SELECT * FROM movies");
+      setMovies(moviesData);
+      
+      // 4. Fetch Movie Quotes
+      const movieQuotesData = dbClient.all("SELECT * FROM movie_quotes");
+      setQuotes(prev => [
+        ...prev.filter(q => q.book_id !== undefined),
+        ...movieQuotesData
+      ]);
+
+      // 5. Fetch Areas
+      const areasData = dbClient.all("SELECT * FROM areas");
+      setAreas(areasData);
+
+      // 6. Fetch Notes
+      const notesData = dbClient.all("SELECT * FROM notes");
+      setNotes(notesData);
+
+      // 7. Fetch Links
+      const linksData = dbClient.all("SELECT * FROM links");
+      setLinks(linksData);
+
+      // 8. Fetch Presets
+      const presetsData = dbClient.all("SELECT * FROM presets");
+      setPresets(presetsData);
+
+      // 9. Fetch PDFs
+      const pdfsData = dbClient.all("SELECT * FROM pdfs");
+      setPdfs(pdfsData);
+
+      // 10. Fetch Drawings
+      const drawingsData = dbClient.all("SELECT * FROM drawings");
+      setDrawings(drawingsData);
+
+      // 11. Fetch Images
+      const imagesData = dbClient.all("SELECT * FROM images");
+      setImages(imagesData);
+
+      setIsDbReady(true);
+    } catch (err) {
+      console.error("Error loading data from Wasm SQLite:", err);
+    }
   }, []);
+
+  useEffect(() => {
+    async function setupWasmDb() {
+      try {
+        await initDb();
+        loadInitialDataFromWasm();
+      } catch (err) {
+        console.error("Failed to load Wasm DB, falling back to server APIs", err);
+        /* eslint-disable react-hooks/set-state-in-effect */
+        fetchBooks();
+        fetchMovies();
+        fetchAreas();
+        fetchNotes();
+        fetchLinks();
+        fetchPresets();
+        fetchPdfs();
+        fetchDrawings();
+        fetchImages();
+        /* eslint-enable react-hooks/set-state-in-effect */
+      }
+    }
+    setupWasmDb();
+  }, [loadInitialDataFromWasm]);
 
   const createPreset = async () => {
     const name = prompt("ENTER VIEWPORT TELEMETRY DESIGNATION:");
@@ -1867,13 +2037,25 @@ export default function Canvas() {
 
   const handleUpdateLinkSpeed = async (linkId, speed) => {
     try {
-      const res = await fetch("/api/links", {
+      const link = linksRef.current.find(l => l.id === linkId);
+      if (!link) return;
+
+      if (isDbReady) {
+        try {
+          dbClient.run("UPDATE links SET speed = @speed WHERE id = @id", { id: linkId, speed });
+        } catch (err) {
+          console.error("Local SQLite update link speed failed:", err);
+        }
+      }
+
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, speed } : l));
+
+      // Sync in background
+      fetch("/api/links", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: linkId, speed })
-      });
-      const updated = await res.json();
-      setLinks(prev => prev.map(l => l.id === linkId ? updated : l));
+      }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -1891,29 +2073,57 @@ export default function Canvas() {
 
     if (!skipHistory) saveStateBeforeMutation();
 
-    try {
-      const res = await fetch("/api/links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_id: source.id,
-          source_type: source.type,
-          target_id: target.id,
-          target_type: target.type
-        })
-      });
-      const data = await res.json();
-      setLinks(prev => [...prev, data]);
-    } catch (err) {
-      console.error(err);
+    const linkId = crypto.randomUUID();
+    const newLink = {
+      id: linkId,
+      source_id: source.id,
+      source_type: source.type,
+      target_id: target.id,
+      target_type: target.type,
+      label: "",
+      type: "default",
+      arrow: "none",
+      speed: "normal",
+      shape: "curved",
+      color: null
+    };
+
+    if (isDbReady) {
+      try {
+        dbClient.run(`
+          INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, color)
+          VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @color)
+        `, newLink);
+      } catch (err) {
+        console.error("Local SQLite create link failed:", err);
+      }
     }
-  }, [saveStateBeforeMutation]);
+
+    setLinks(prev => [...prev, newLink]);
+
+    // Sync in background
+    fetch("/api/links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newLink)
+    }).catch((err) => console.error("Failed to sync new link in background:", err));
+  }, [saveStateBeforeMutation, isDbReady]);
 
   const handleDeleteLink = async (linkId) => {
     saveStateBeforeMutation();
     try {
-      await fetch(`/api/links?id=${linkId}`, { method: "DELETE" });
+      if (isDbReady) {
+        try {
+          dbClient.run("DELETE FROM links WHERE id = @id", { id: linkId });
+        } catch (err) {
+          console.error("Local SQLite delete link failed:", err);
+        }
+      }
+
       setLinks(prev => prev.filter(l => l.id !== linkId));
+
+      // Sync in background
+      fetch(`/api/links?id=${linkId}`, { method: "DELETE" }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -1923,13 +2133,25 @@ export default function Canvas() {
     saveStateBeforeMutation();
     setEditingLinkId(null);
     try {
-      const res = await fetch("/api/links", {
+      const link = linksRef.current.find(l => l.id === linkId);
+      if (!link) return;
+
+      if (isDbReady) {
+        try {
+          dbClient.run("UPDATE links SET label = @label WHERE id = @id", { id: linkId, label });
+        } catch (err) {
+          console.error("Local SQLite update link label failed:", err);
+        }
+      }
+
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, label } : l));
+
+      // Sync in background
+      fetch("/api/links", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: linkId, label })
-      });
-      const data = await res.json();
-      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, label: data.label } : l));
+      }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -1938,13 +2160,25 @@ export default function Canvas() {
   const handleUpdateLinkType = async (linkId, type) => {
     saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/links", {
+      const link = linksRef.current.find(l => l.id === linkId);
+      if (!link) return;
+
+      if (isDbReady) {
+        try {
+          dbClient.run("UPDATE links SET type = @type WHERE id = @id", { id: linkId, type });
+        } catch (err) {
+          console.error("Local SQLite update link type failed:", err);
+        }
+      }
+
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, type } : l));
+
+      // Sync in background
+      fetch("/api/links", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: linkId, type })
-      });
-      const data = await res.json();
-      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, type: data.type } : l));
+      }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -1953,13 +2187,25 @@ export default function Canvas() {
   const handleUpdateLinkColor = async (linkId, color) => {
     saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/links", {
+      const link = linksRef.current.find(l => l.id === linkId);
+      if (!link) return;
+
+      if (isDbReady) {
+        try {
+          dbClient.run("UPDATE links SET color = @color WHERE id = @id", { id: linkId, color });
+        } catch (err) {
+          console.error("Local SQLite update link color failed:", err);
+        }
+      }
+
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, color } : l));
+
+      // Sync in background
+      fetch("/api/links", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: linkId, color })
-      });
-      const data = await res.json();
-      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, color: data.color } : l));
+      }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -1968,13 +2214,25 @@ export default function Canvas() {
   const handleUpdateLinkArrow = async (linkId, arrow) => {
     saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/links", {
+      const link = linksRef.current.find(l => l.id === linkId);
+      if (!link) return;
+
+      if (isDbReady) {
+        try {
+          dbClient.run("UPDATE links SET arrow = @arrow WHERE id = @id", { id: linkId, arrow });
+        } catch (err) {
+          console.error("Local SQLite update link arrow failed:", err);
+        }
+      }
+
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, arrow } : l));
+
+      // Sync in background
+      fetch("/api/links", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: linkId, arrow })
-      });
-      const data = await res.json();
-      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, arrow: data.arrow } : l));
+      }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -1983,13 +2241,25 @@ export default function Canvas() {
   const handleUpdateLinkShape = async (linkId, shape) => {
     saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/links", {
+      const link = linksRef.current.find(l => l.id === linkId);
+      if (!link) return;
+
+      if (isDbReady) {
+        try {
+          dbClient.run("UPDATE links SET shape = @shape WHERE id = @id", { id: linkId, shape });
+        } catch (err) {
+          console.error("Local SQLite update link shape failed:", err);
+        }
+      }
+
+      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, shape } : l));
+
+      // Sync in background
+      fetch("/api/links", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: linkId, shape })
-      });
-      const data = await res.json();
-      setLinks(prev => prev.map(l => l.id === linkId ? { ...l, shape: data.shape } : l));
+      }).catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
     }
@@ -2237,13 +2507,39 @@ export default function Canvas() {
         y_pos = Math.round(y_pos / 20) * 20;
       }
 
-      const res = await fetch("/api/books", {
+      const bookId = crypto.randomUUID();
+      const newBook = {
+        id: bookId,
+        title: bookData.title,
+        author: bookData.author || '',
+        cover_url: bookData.cover_url || '',
+        rating: null,
+        review: null,
+        x_pos,
+        y_pos,
+        status: bookData.status || 'To Read',
+        quotes: []
+      };
+
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            INSERT INTO books (id, title, author, cover_url, x_pos, y_pos, status)
+            VALUES (@id, @title, @author, @cover_url, @x_pos, @y_pos, @status)
+          `, newBook);
+        } catch (err) {
+          console.error("Local SQLite book creation failed:", err);
+        }
+      }
+
+      setBooks((prev) => [...prev, newBook]);
+
+      // Sync in background
+      fetch("/api/books", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...bookData, x_pos, y_pos }),
-      });
-      const newBook = await res.json();
-      setBooks((prev) => [...prev, newBook]);
+        body: JSON.stringify(newBook),
+      }).catch((err) => console.error("Failed to sync new book in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2252,13 +2548,27 @@ export default function Canvas() {
   const handleUpdateBook = async (updatedBook, skipHistory = false) => {
     if (!skipHistory) saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/books", {
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            UPDATE books
+            SET title = @title, author = @author, cover_url = @cover_url,
+                rating = @rating, review = @review, x_pos = @x_pos, y_pos = @y_pos, status = @status
+            WHERE id = @id
+          `, updatedBook);
+        } catch (err) {
+          console.error("Local SQLite book update failed:", err);
+        }
+      }
+
+      setBooks((prev) => prev.map((b) => (b.id === updatedBook.id ? { ...b, ...updatedBook } : b)));
+
+      // Sync in background
+      fetch("/api/books", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedBook),
-      });
-      const data = await res.json();
-      setBooks((prev) => prev.map((b) => (b.id === data.id ? data : b)));
+      }).catch((err) => console.error("Failed to sync updated book in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2272,14 +2582,35 @@ export default function Canvas() {
     const x_pos = book.x_pos + 250 + Math.random() * 50;
     const y_pos = book.y_pos + Math.random() * 100;
 
+    const quoteId = crypto.randomUUID();
+    const newQuote = {
+      id: quoteId,
+      book_id: bookId,
+      quote: text,
+      x_pos,
+      y_pos
+    };
+
     try {
-      const res = await fetch("/api/quotes", {
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            INSERT INTO quotes (id, book_id, quote, x_pos, y_pos)
+            VALUES (@id, @book_id, @quote, @x_pos, @y_pos)
+          `, newQuote);
+        } catch (err) {
+          console.error("Local SQLite quote creation failed:", err);
+        }
+      }
+
+      setQuotes((prev) => [...prev, newQuote]);
+
+      // Sync in background
+      fetch("/api/quotes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ book_id: bookId, quote: text, x_pos, y_pos }),
-      });
-      const newQuote = await res.json();
-      setQuotes((prev) => [...prev, newQuote]);
+        body: JSON.stringify(newQuote),
+      }).catch((err) => console.error("Failed to sync new quote in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2303,13 +2634,41 @@ export default function Canvas() {
         x_pos = Math.round(x_pos / 20) * 20;
         y_pos = Math.round(y_pos / 20) * 20;
       }
-      const res = await fetch("/api/movies", {
+
+      const movieId = crypto.randomUUID();
+      const newMovie = {
+        id: movieId,
+        title: movieData.title,
+        director: movieData.director || '',
+        cover_url: movieData.cover_url || '',
+        rating: null,
+        review: null,
+        x_pos,
+        y_pos,
+        status: movieData.status || 'To Watch',
+        year: movieData.year || null,
+        quotes: []
+      };
+
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            INSERT INTO movies (id, title, director, cover_url, x_pos, y_pos, status, year)
+            VALUES (@id, @title, @director, @cover_url, @x_pos, @y_pos, @status, @year)
+          `, newMovie);
+        } catch (err) {
+          console.error("Local SQLite movie creation failed:", err);
+        }
+      }
+
+      setMovies((prev) => [...prev, newMovie]);
+
+      // Sync in background
+      fetch("/api/movies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...movieData, x_pos, y_pos }),
-      });
-      const newMovie = await res.json();
-      setMovies((prev) => [...prev, newMovie]);
+        body: JSON.stringify(newMovie),
+      }).catch((err) => console.error("Failed to sync new movie in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2318,13 +2677,27 @@ export default function Canvas() {
   const handleUpdateMovie = async (updatedMovie, skipHistory = false) => {
     if (!skipHistory) saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/movies", {
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            UPDATE movies
+            SET title = @title, director = @director, cover_url = @cover_url,
+                rating = @rating, review = @review, x_pos = @x_pos, y_pos = @y_pos, status = @status, year = @year
+            WHERE id = @id
+          `, updatedMovie);
+        } catch (err) {
+          console.error("Local SQLite movie update failed:", err);
+        }
+      }
+
+      setMovies((prev) => prev.map((m) => (m.id === updatedMovie.id ? { ...m, ...updatedMovie } : m)));
+
+      // Sync in background
+      fetch("/api/movies", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedMovie),
-      });
-      const data = await res.json();
-      setMovies((prev) => prev.map((m) => (m.id === data.id ? data : m)));
+      }).catch((err) => console.error("Failed to sync updated movie in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2336,13 +2709,28 @@ export default function Canvas() {
     if (!movie) return;
     const x_pos = movie.x_pos + 250 + Math.random() * 50;
     const y_pos = movie.y_pos + Math.random() * 100;
+
+    const quoteId = crypto.randomUUID();
+    const newQuote = {
+      id: quoteId,
+      movie_id: movieId,
+      quote: text,
+      x_pos,
+      y_pos
+    };
+
     try {
-      const res = await fetch("/api/movie_quotes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ movie_id: movieId, quote: text, x_pos, y_pos }),
-      });
-      const newQuote = await res.json();
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            INSERT INTO movie_quotes (id, movie_id, quote, x_pos, y_pos)
+            VALUES (@id, @movie_id, @quote, @x_pos, @y_pos)
+          `, newQuote);
+        } catch (err) {
+          console.error("Local SQLite movie quote creation failed:", err);
+        }
+      }
+
       setQuotes((prev) => [...prev, newQuote]);
       setMovies((prev) =>
         prev.map((m) =>
@@ -2351,6 +2739,13 @@ export default function Canvas() {
             : m
         )
       );
+
+      // Sync in background
+      fetch("/api/movie_quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newQuote),
+      }).catch((err) => console.error("Failed to sync new movie quote in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2363,13 +2758,36 @@ export default function Canvas() {
   const createArea = async (areaData) => {
     saveStateBeforeMutation();
     try {
-      const res = await fetch("/api/areas", {
+      const areaId = crypto.randomUUID();
+      const newArea = {
+        id: areaId,
+        name: areaData.name || 'NEW AREA',
+        x_pos: areaData.x_pos || 0,
+        y_pos: areaData.y_pos || 0,
+        width: areaData.width || 200,
+        height: areaData.height || 200,
+        color: areaData.color || 'rgba(0, 170, 255, 0.08)'
+      };
+
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            INSERT INTO areas (id, name, x_pos, y_pos, width, height, color)
+            VALUES (@id, @name, @x_pos, @y_pos, @width, @height, @color)
+          `, newArea);
+        } catch (err) {
+          console.error("Local SQLite area creation failed:", err);
+        }
+      }
+
+      setAreas((prev) => [...prev, newArea]);
+
+      // Sync in background
+      fetch("/api/areas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(areaData),
-      });
-      const data = await res.json();
-      setAreas((prev) => [...prev, data]);
+        body: JSON.stringify(newArea),
+      }).catch((err) => console.error("Failed to sync new area in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2384,13 +2802,26 @@ export default function Canvas() {
       const updatedFields = typeof updates === "string" ? { name: updates } : updates;
       const updatedArea = { ...area, ...updatedFields };
 
-      const res = await fetch("/api/areas", {
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            UPDATE areas
+            SET name = @name, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, color = @color
+            WHERE id = @id
+          `, updatedArea);
+        } catch (err) {
+          console.error("Local SQLite area update failed:", err);
+        }
+      }
+
+      setAreas((prev) => prev.map((a) => (a.id === id ? updatedArea : a)));
+
+      // Sync in background
+      fetch("/api/areas", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedArea),
-      });
-      const data = await res.json();
-      setAreas((prev) => prev.map((a) => (a.id === id ? data : a)));
+      }).catch((err) => console.error("Failed to sync updated area in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -2587,21 +3018,42 @@ export default function Canvas() {
       y_pos = Math.round(y_pos / 20) * 20;
     }
     
-    try {
-      const res = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ x_pos, y_pos, content: initialContent }),
-      });
-      const data = await res.json();
-      setNotes((prev) => [...prev, data]);
-      setNewlyCreatedNoteId(data.id);
-      return data;
-    } catch (err) {
-      console.error(err);
-      return null;
+    const noteId = crypto.randomUUID();
+    const newNote = {
+      id: noteId,
+      content: initialContent || '',
+      x_pos,
+      y_pos,
+      width: 220,
+      height: 150,
+      z_index: 0,
+      color: 'rgba(255, 255, 255, 0.08)',
+      wrap_text: 1
+    };
+
+    if (isDbReady) {
+      try {
+        dbClient.run(`
+          INSERT INTO notes (id, content, x_pos, y_pos, width, height, z_index, color, wrap_text)
+          VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @z_index, @color, @wrap_text)
+        `, newNote);
+      } catch (err) {
+        console.error("Local SQLite note creation failed:", err);
+      }
     }
-  }, [pendingPlacement, snapToGrid, saveStateBeforeMutation]);
+
+    setNotes((prev) => [...prev, newNote]);
+    setNewlyCreatedNoteId(noteId);
+
+    // Sync in background (failing gracefully)
+    fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newNote),
+    }).catch((err) => console.error("Failed to sync new note to server in background:", err));
+
+    return newNote;
+  }, [pendingPlacement, snapToGrid, saveStateBeforeMutation, isDbReady]);
 
   const handleDeleteNote = (noteId) => {
     setActiveDialog({ type: "confirm-delete-note", noteId });
@@ -2933,13 +3385,29 @@ export default function Canvas() {
       const updatedFields = typeof updates === "string" ? { content: updates } : updates;
       const updatedNote = { ...note, ...updatedFields };
 
-      const res = await fetch("/api/notes", {
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            UPDATE notes
+            SET content = @content, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height, z_index = @z_index, color = @color, wrap_text = @wrap_text
+            WHERE id = @id
+          `, {
+            ...updatedNote,
+            wrap_text: updatedNote.wrap_text !== undefined ? (updatedNote.wrap_text ? 1 : 0) : 1
+          });
+        } catch (err) {
+          console.error("Local SQLite note edit failed:", err);
+        }
+      }
+
+      setNotes((prev) => prev.map((n) => (n.id === id ? updatedNote : n)));
+
+      // Sync in background
+      fetch("/api/notes", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedNote),
-      });
-      const data = await res.json();
-      setNotes((prev) => prev.map((n) => (n.id === id ? data : n)));
+      }).catch((err) => console.error("Failed to sync note updates in background:", err));
     } catch (err) {
       console.error(err);
     }
@@ -3011,13 +3479,26 @@ export default function Canvas() {
 
       const updatedImage = { ...image, ...updates };
 
-      const res = await fetch("/api/images", {
+      if (isDbReady) {
+        try {
+          dbClient.run(`
+            UPDATE images
+            SET name = @name, x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height
+            WHERE id = @id
+          `, updatedImage);
+        } catch (err) {
+          console.error("Local SQLite image update failed:", err);
+        }
+      }
+
+      setImages((prev) => prev.map((img) => (img.id === id ? updatedImage : img)));
+
+      // Sync in background
+      fetch("/api/images", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedImage)
-      });
-      const data = await res.json();
-      setImages((prev) => prev.map((img) => (img.id === id ? data : img)));
+      }).catch((err) => console.error("Failed to sync updated image in background:", err));
     } catch (err) {
       console.error("Failed to update image:", err);
     }
@@ -3032,39 +3513,65 @@ export default function Canvas() {
     const spawnX = pdf.x_pos + pdfWidth + 60;
     const spawnY = pdf.y_pos;
 
-    try {
-      const noteRes = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ x_pos: spawnX, y_pos: spawnY, content: text }),
-      });
-      if (!noteRes.ok) throw new Error("Failed to create note");
-      const noteData = await noteRes.json();
-      setNotes((prev) => [...prev, noteData]);
+    const noteId = crypto.randomUUID();
+    const newNote = {
+      id: noteId,
+      content: text,
+      x_pos: spawnX,
+      y_pos: spawnY,
+      width: 220,
+      height: 150,
+      z_index: 0,
+      color: 'rgba(255, 255, 255, 0.08)',
+      wrap_text: 1
+    };
 
-      // Create a link connection between PDF and Note:
-      const linkRes = await fetch("/api/links", {
+    const linkId = crypto.randomUUID();
+    const newLink = {
+      id: linkId,
+      source_id: pdfId,
+      source_type: "pdf",
+      target_id: noteId,
+      target_type: "note",
+      label: "Source Citation",
+      type: "default",
+      arrow: "target",
+      speed: "normal",
+      shape: "curved",
+      color: null
+    };
+
+    if (isDbReady) {
+      try {
+        dbClient.run(`
+          INSERT INTO notes (id, content, x_pos, y_pos, width, height, z_index, color, wrap_text)
+          VALUES (@id, @content, @x_pos, @y_pos, @width, @height, @z_index, @color, @wrap_text)
+        `, newNote);
+        dbClient.run(`
+          INSERT INTO links (id, source_id, source_type, target_id, target_type, label, type, arrow, speed, shape, color)
+          VALUES (@id, @source_id, @source_type, @target_id, @target_type, @label, @type, @arrow, @speed, @shape, @color)
+        `, newLink);
+      } catch (err) {
+        console.error("Local SQLite PDF note spawning failed:", err);
+      }
+    }
+
+    setNotes((prev) => [...prev, newNote]);
+    setLinks((prev) => [...prev, newLink]);
+
+    // Sync note in background
+    fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newNote),
+    }).then(() => {
+      // Sync link in background
+      return fetch("/api/links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_id: pdfId,
-          source_type: "pdf",
-          target_id: noteData.id,
-          target_type: "note",
-          label: "Source Citation",
-          type: "default",
-          arrow: "target",
-          speed: "normal",
-          shape: "curved"
-        }),
+        body: JSON.stringify(newLink)
       });
-      if (linkRes.ok) {
-        const linkData = await linkRes.json();
-        setLinks((prev) => [...prev, linkData]);
-      }
-    } catch (err) {
-      console.error("Failed to spawn note from PDF:", err);
-    }
+    }).catch((err) => console.error("Failed to sync spawned note from PDF in background:", err));
   };
 
   // Focus transition navigator
@@ -3889,7 +4396,7 @@ export default function Canvas() {
 
     // Persist group dragging coordinate changes using batch transaction API
     if (drag.groupItems && drag.hasMoved) {
-      const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [] };
+      const batch = { books: [], notes: [], areas: [], quotes: [], pdfs: [], images: [], movies: [], movie_quotes: [] };
       drag.groupItems.forEach((item) => {
         if (item.type === "movie") {
           const movie = moviesRef.current.find((m) => m.id === item.id);
@@ -3905,7 +4412,13 @@ export default function Canvas() {
           if (area) batch.areas.push({ id: area.id, x_pos: area.x_pos, y_pos: area.y_pos, width: area.width || 200, height: area.height || 200 });
         } else if (item.type === "quote") {
           const quote = quotesRef.current.find((q) => q.id === item.id);
-          if (quote) batch.quotes.push({ id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos });
+          if (quote) {
+            if (quote.movie_id !== undefined) {
+              batch.movie_quotes.push({ id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos });
+            } else {
+              batch.quotes.push({ id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos });
+            }
+          }
         } else if (item.type === "pdf") {
           const pdf = pdfsRef.current.find((p) => p.id === item.id);
           if (pdf) batch.pdfs.push({ id: pdf.id, x_pos: pdf.x_pos, y_pos: pdf.y_pos, width: pdf.width || 450, height: pdf.height || 600 });
@@ -3914,6 +4427,22 @@ export default function Canvas() {
           if (image) batch.images.push({ id: image.id, x_pos: image.x_pos, y_pos: image.y_pos, width: image.width || 300, height: image.height || 300 });
         }
       });
+
+      if (isDbReady) {
+        try {
+          batch.movies?.forEach((m) => dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", m));
+          batch.books?.forEach((b) => dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", b));
+          batch.notes?.forEach((n) => dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", n));
+          batch.areas?.forEach((a) => dbClient.run("UPDATE areas SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", a));
+          batch.quotes?.forEach((q) => dbClient.run("UPDATE quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", q));
+          batch.movie_quotes?.forEach((mq) => dbClient.run("UPDATE movie_quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", mq));
+          batch.pdfs?.forEach((p) => dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", p));
+          batch.images?.forEach((img) => dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", img));
+        } catch (err) {
+          console.error("Local batch coordinate write error:", err);
+        }
+      }
+
       fetch("/api/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4019,6 +4548,13 @@ export default function Canvas() {
       if (drag.hasMoved) {
         const book = booksRef.current.find((b) => b.id === drag.id);
         if (book) {
+          if (isDbReady) {
+            try {
+              dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: book.id, x_pos: book.x_pos, y_pos: book.y_pos });
+            } catch (err) {
+              console.error(err);
+            }
+          }
           fetch("/api/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -4051,6 +4587,13 @@ export default function Canvas() {
       if (drag.hasMoved) {
         const movie = moviesRef.current.find((m) => m.id === drag.id);
         if (movie) {
+          if (isDbReady) {
+            try {
+              dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: movie.id, x_pos: movie.x_pos, y_pos: movie.y_pos });
+            } catch (err) {
+              console.error(err);
+            }
+          }
           fetch("/api/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -4082,10 +4625,26 @@ export default function Canvas() {
       if (drag.hasMoved) {
         const quote = quotesRef.current.find((q) => q.id === drag.id);
         if (quote) {
+          const isMovieQuote = quote.movie_id !== undefined;
+          if (isDbReady) {
+            try {
+              if (isMovieQuote) {
+                dbClient.run("UPDATE movie_quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos });
+              } else {
+                dbClient.run("UPDATE quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", { id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos });
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          }
           fetch("/api/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ quotes: [{ id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos }] }),
+            body: JSON.stringify(
+              isMovieQuote 
+                ? { movie_quotes: [{ id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos }] }
+                : { quotes: [{ id: quote.id, x_pos: quote.x_pos, y_pos: quote.y_pos }] }
+            ),
           }).catch((err) => console.error(err));
         }
       } else {
@@ -4102,7 +4661,7 @@ export default function Canvas() {
       }
     } else if (drag.type === "area" || drag.type === "area-resize") {
       if (drag.hasMoved) {
-        const batch = { books: [], movies: [], notes: [], areas: [], quotes: [], pdfs: [], images: [] };
+        const batch = { books: [], movies: [], notes: [], areas: [], quotes: [], movie_quotes: [], pdfs: [], images: [] };
         const area = areasRef.current.find((a) => a.id === drag.id);
         if (area) {
           batch.areas.push({ id: area.id, x_pos: area.x_pos, y_pos: area.y_pos, width: area.width || 200, height: area.height || 200 });
@@ -4124,7 +4683,13 @@ export default function Canvas() {
 
           cQuotes?.forEach((cq) => {
             const q = quotesRef.current.find((quote) => quote.id === cq.id);
-            if (q) batch.quotes.push({ id: q.id, x_pos: q.x_pos, y_pos: q.y_pos });
+            if (q) {
+              if (q.movie_id !== undefined) {
+                batch.movie_quotes.push({ id: q.id, x_pos: q.x_pos, y_pos: q.y_pos });
+              } else {
+                batch.quotes.push({ id: q.id, x_pos: q.x_pos, y_pos: q.y_pos });
+              }
+            }
           });
 
           cNotes?.forEach((cn) => {
@@ -4141,6 +4706,21 @@ export default function Canvas() {
             const img = imagesRef.current.find((image) => image.id === cimg.id);
             if (img) batch.images.push({ id: img.id, x_pos: img.x_pos, y_pos: img.y_pos, width: img.width || 300, height: img.height || 300 });
           });
+        }
+
+        if (isDbReady) {
+          try {
+            batch.movies?.forEach((m) => dbClient.run("UPDATE movies SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", m));
+            batch.books?.forEach((b) => dbClient.run("UPDATE books SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", b));
+            batch.notes?.forEach((n) => dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", n));
+            batch.areas?.forEach((a) => dbClient.run("UPDATE areas SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", a));
+            batch.quotes?.forEach((q) => dbClient.run("UPDATE quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", q));
+            batch.movie_quotes?.forEach((mq) => dbClient.run("UPDATE movie_quotes SET x_pos = @x_pos, y_pos = @y_pos WHERE id = @id", mq));
+            batch.pdfs?.forEach((p) => dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", p));
+            batch.images?.forEach((img) => dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", img));
+          } catch (err) {
+            console.error("Local batch coordinate write error in area drop:", err);
+          }
         }
 
         fetch("/api/batch", {
@@ -4165,6 +4745,13 @@ export default function Canvas() {
         if (drag.hasMoved) {
           const note = notesRef.current.find((n) => n.id === drag.id);
           if (note) {
+            if (isDbReady) {
+              try {
+                dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", { id: note.id, x_pos: note.x_pos, y_pos: note.y_pos, width: note.width || 220, height: note.height || 150 });
+              } catch (err) {
+                console.error(err);
+              }
+            }
             fetch("/api/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4192,6 +4779,13 @@ export default function Canvas() {
         if (drag.hasMoved) {
           const note = notesRef.current.find((n) => n.id === drag.id);
           if (note) {
+            if (isDbReady) {
+              try {
+                dbClient.run("UPDATE notes SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", { id: note.id, x_pos: note.x_pos, y_pos: note.y_pos, width: note.width || 220, height: note.height || 150 });
+              } catch (err) {
+                console.error(err);
+              }
+            }
             fetch("/api/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4205,6 +4799,13 @@ export default function Canvas() {
         if (drag.hasMoved) {
           const pdf = pdfsRef.current.find((p) => p.id === drag.id);
           if (pdf) {
+            if (isDbReady) {
+              try {
+                dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", { id: pdf.id, x_pos: pdf.x_pos, y_pos: pdf.y_pos, width: pdf.width || 450, height: pdf.height || 600 });
+              } catch (err) {
+                console.error(err);
+              }
+            }
             fetch("/api/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4232,6 +4833,13 @@ export default function Canvas() {
         if (drag.hasMoved) {
           const pdf = pdfsRef.current.find((p) => p.id === drag.id);
           if (pdf) {
+            if (isDbReady) {
+              try {
+                dbClient.run("UPDATE pdfs SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", { id: pdf.id, x_pos: pdf.x_pos, y_pos: pdf.y_pos, width: pdf.width || 450, height: pdf.height || 600 });
+              } catch (err) {
+                console.error(err);
+              }
+            }
             fetch("/api/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4245,6 +4853,13 @@ export default function Canvas() {
         if (drag.hasMoved) {
           const image = imagesRef.current.find((img) => img.id === drag.id);
           if (image) {
+            if (isDbReady) {
+              try {
+                dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", { id: image.id, x_pos: image.x_pos, y_pos: image.y_pos, width: image.width || 300, height: image.height || 300 });
+              } catch (err) {
+                console.error(err);
+              }
+            }
             fetch("/api/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4272,6 +4887,13 @@ export default function Canvas() {
         if (drag.hasMoved) {
           const image = imagesRef.current.find((img) => img.id === drag.id);
           if (image) {
+            if (isDbReady) {
+              try {
+                dbClient.run("UPDATE images SET x_pos = @x_pos, y_pos = @y_pos, width = @width, height = @height WHERE id = @id", { id: image.id, x_pos: image.x_pos, y_pos: image.y_pos, width: image.width || 300, height: image.height || 300 });
+              } catch (err) {
+                console.error(err);
+              }
+            }
             fetch("/api/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },

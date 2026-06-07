@@ -22,7 +22,7 @@ const deleteQuoteStmt = db.prepare('DELETE FROM movie_quotes WHERE id = ?');
 export async function POST(request) {
   try {
     const data = await request.json();
-    const id = crypto.randomUUID();
+    const id = data.id || crypto.randomUUID();
     
     insertQuoteStmt.run({
       id,
