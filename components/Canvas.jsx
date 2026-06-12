@@ -1952,7 +1952,6 @@ export default function Canvas() {
         loadInitialDataFromWasm();
       } catch (err) {
         console.error("Failed to load Wasm DB, falling back to server APIs", err);
-        /* eslint-disable react-hooks/set-state-in-effect */
         fetchBooks();
         fetchMovies();
         fetchAreas();
@@ -1962,7 +1961,6 @@ export default function Canvas() {
         fetchPdfs();
         fetchDrawings();
         fetchImages();
-        /* eslint-enable react-hooks/set-state-in-effect */
       }
     }
     setupWasmDb();

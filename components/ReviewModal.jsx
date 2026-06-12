@@ -38,6 +38,7 @@ export default function ReviewModal({
     if (editorRef.current && item) {
       editorRef.current.innerHTML = item.review || "";
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReview(item?.review || "");
     setRating(item?.rating || 0);
     setStatus(item?.status || (type === "movie" ? "To Watch" : "To Read"));
