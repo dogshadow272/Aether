@@ -3432,6 +3432,25 @@ export default function Canvas() {
 
       const data = await res.json();
       setPdfs((prev) => [...prev, data]);
+
+      // Synchronize creation with local client Wasm SQLite DB
+      try {
+        dbClient.run(
+          "INSERT INTO pdfs (id, name, filename, x_pos, y_pos, width, height, z_index) VALUES (@id, @name, @filename, @x_pos, @y_pos, @width, @height, @z_index)",
+          {
+            id: data.id,
+            name: data.name,
+            filename: data.filename,
+            x_pos: data.x_pos,
+            y_pos: data.y_pos,
+            width: data.width,
+            height: data.height,
+            z_index: data.z_index || 0,
+          }
+        );
+      } catch (dbErr) {
+        console.error("Failed to sync new PDF to local Wasm DB:", dbErr);
+      }
     } catch (err) {
       console.error("PDF upload error:", err);
       alert("Failed to upload PDF. Please make sure it is a valid PDF file.");
@@ -3461,6 +3480,26 @@ export default function Canvas() {
 
       const data = await res.json();
       setImages((prev) => [...prev, data]);
+
+      // Synchronize creation with local client Wasm SQLite DB
+      try {
+        dbClient.run(
+          "INSERT INTO images (id, name, filename, x_pos, y_pos, width, height, z_index) VALUES (@id, @name, @filename, @x_pos, @y_pos, @width, @height, @z_index)",
+          {
+            id: data.id,
+            name: data.name,
+            filename: data.filename,
+            x_pos: data.x_pos,
+            y_pos: data.y_pos,
+            width: data.width,
+            height: data.height,
+            z_index: data.z_index || 0,
+          }
+        );
+      } catch (dbErr) {
+        console.error("Failed to sync new image to local Wasm DB:", dbErr);
+      }
+
       showToast("IMAGE IMPORTED SUCCESSFULLY");
     } catch (err) {
       console.error("Image upload error:", err);

@@ -5,7 +5,10 @@ export function proxy(request) {
   if (isProd) {
     const host = request.headers.get('host') || '';
     const isLocal = host.includes('localhost') || host.includes('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.');
-    const isVercel = process.env.VERCEL === '1' || host.includes('vercel.app');
+    const isVercel = process.env.VERCEL === '1' || 
+                     host.includes('vercel.app') || 
+                     !!request.headers.get('x-vercel-id') || 
+                     !!request.headers.get('x-vercel-deployment-url');
     
     const url = request.nextUrl.clone();
     
@@ -30,5 +33,9 @@ export function proxy(request) {
 }
 
 export const config = {
-  matcher: ['/api/:path*', '/test/:path*'],
+  matcher: [
+    // Match /test and all /api routes except pdfs, images, drawings, and uploads to avoid body parsing middleware issues
+    '/test/:path*',
+    '/api/((?!pdfs|images|drawings|uploads).*)',
+  ],
 };

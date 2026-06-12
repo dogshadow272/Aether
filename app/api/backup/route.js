@@ -9,10 +9,10 @@ export async function GET() {
     const notes = db.prepare('SELECT * FROM notes').all();
     const links = db.prepare('SELECT * FROM links').all();
     const presets = db.prepare('SELECT * FROM presets').all();
-    const pdfs = db.prepare('SELECT * FROM pdfs').all();
+    const pdfs = db.prepare('SELECT id, name, filename, x_pos, y_pos, width, height, z_index, created_at FROM pdfs').all();
     const pdf_highlights = db.prepare('SELECT * FROM pdf_highlights').all();
     const drawings = db.prepare('SELECT * FROM drawings').all();
-    const images = db.prepare('SELECT * FROM images').all();
+    const images = db.prepare('SELECT id, name, filename, x_pos, y_pos, width, height, z_index, created_at FROM images').all();
     const movies = db.prepare('SELECT * FROM movies').all();
     const movie_quotes = db.prepare('SELECT * FROM movie_quotes').all();
 

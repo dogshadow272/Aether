@@ -4,11 +4,11 @@ import fs from 'fs/promises';
 import path from 'path';
 
 // Pre-compiled SQLite prepared statements for maximum performance
-const selectImagesStmt = db.prepare('SELECT * FROM images ORDER BY created_at DESC');
-const selectImageByIdStmt = db.prepare('SELECT * FROM images WHERE id = ?');
+const selectImagesStmt = db.prepare('SELECT id, name, filename, x_pos, y_pos, width, height, z_index, created_at FROM images ORDER BY created_at DESC');
+const selectImageByIdStmt = db.prepare('SELECT id, name, filename, x_pos, y_pos, width, height, z_index, created_at FROM images WHERE id = ?');
 const insertImageStmt = db.prepare(`
-  INSERT INTO images (id, name, filename, x_pos, y_pos, width, height)
-  VALUES (@id, @name, @filename, @x_pos, @y_pos, @width, @height)
+  INSERT INTO images (id, name, filename, x_pos, y_pos, width, height, file_data)
+  VALUES (@id, @name, @filename, @x_pos, @y_pos, @width, @height, @file_data)
 `);
 const updateImageStmt = db.prepare(`
   UPDATE images
@@ -47,13 +47,15 @@ export async function POST(request) {
     const baseName = path.basename(originalName, ext).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
     const uniqueFilename = `${baseName}_${Date.now()}${ext}`;
 
-    // Ensure upload directory exists
+    // Ensure upload directory exists and try saving file to disk (fallback/local development)
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    await fs.mkdir(uploadDir, { recursive: true });
-
-    // Save file to public/uploads/
-    const filePath = path.join(uploadDir, uniqueFilename);
-    await fs.writeFile(filePath, buffer);
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+      const filePath = path.join(uploadDir, uniqueFilename);
+      await fs.writeFile(filePath, buffer);
+    } catch (fsError) {
+      console.warn('Could not write file to local disk (expected on read-only environments like Vercel):', fsError);
+    }
 
     // Insert into SQLite database
     const id = formData.get('id') || crypto.randomUUID();
@@ -64,7 +66,8 @@ export async function POST(request) {
       x_pos,
       y_pos,
       width: 300,
-      height: 300
+      height: 300,
+      file_data: buffer
     });
 
     const newImage = selectImageByIdStmt.get(id);
